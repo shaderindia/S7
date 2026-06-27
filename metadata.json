@@ -1,0 +1,6 @@
+{
+  "name": "S7 Call",
+  "description": "End-to-End Encrypted Secure Texting, Voice, and Video Calling App",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

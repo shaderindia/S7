@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "575024779667",
+    "project_id": "nsgb-gaming",
+    "storage_bucket": "nsgb-gaming.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:575024779667:android:0250587efeae59fe2b5866",
+        "android_client_info": {
+          "package_name": "com.aistudio.s7call.hxvptq"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEWlbt3iFpK8iUACfgAVocsOe2PaDDpok"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

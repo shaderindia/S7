@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <!-- Firebase Realtime Database Client SDK v8 -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+        #video-container {
+            display: none; width: 100%; height: 100%; position: relative; overflow: hidden;
+        }
+        #remoteVideo {
+            background: #000;
+            transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
+        }
+        #localVideo {
+            position: absolute; bottom: 20px; right: 20px;
+            object-fit: cover; border-radius: 8px; border: 2px solid white; background: #333; z-index: 10;
+            transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
+        }
+
+        /* REMOTE VIDEO ROTATIONS */
+        .remote-rot-0 {
+            width: 100%; height: 100%; object-fit: cover; transform: none;
+        }
+        .remote-rot-90 {
+            width: 100vh; height: 100vw; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) rotate(90deg); object-fit: cover;
+        }
+        .remote-rot-180 {
+            width: 100%; height: 100%; object-fit: cover; transform: rotate(180deg);
+        }
+        .remote-rot-270 {
+            width: 100vh; height: 100vw; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) rotate(270deg); object-fit: cover;
+        }
+
+        /* LOCAL VIDEO ROTATIONS */
+        .local-rot-0 {
+            width: 100px; height: 150px; transform: scaleX(-1);
+        }
+        .local-rot-90 {
+            width: 150px; height: 100px; transform: rotate(90deg) scaleY(-1);
+        }
+        .local-rot-180 {
+            width: 100px; height: 150px; transform: rotate(180deg) scaleX(-1);
+        }
+        .local-rot-270 {
+            width: 150px; height: 100px; transform: rotate(270deg) scaleY(-1);
+        }
+    </style>
+</head>
+<body>
+    <div id="video-container">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+    <script>
+        // WebRTC & Firebase Realtime Database Config
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEWlbt3iFpK8iUACfgAVocsOe2PaDDpok",
+            databaseURL: "https://nsgb-gaming-default-rtdb.firebaseio.com",
+            projectId: "nsgb-gaming"
+        };
+
+        let database = null;
+        let myId = null;
+        
+        let dataConnections = {}; // remoteId -> { pc, dataChannel }
+        let activeCall = null;    // { remoteId, isVideo, pc, localStream, roomId }
+        let pendingMessages = {}; // remoteId -> [jsonStr]
+        let localStream = null;
+        let remoteRot = 270;
+        let localRot = 270;
+        let callInitiator = false;
+
+        // Ice configuration
+        const defaultIceServers = [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" },
+            {
+                urls: "turn:openrelay.metered.ca:80",
+                username: "openrelay",
+                credential: "openrelay"
+            },
+            {
+                urls: "turn:openrelay.metered.ca:443",
+                username: "openrelay",
+                credential: "openrelay"
+            },
+            {
+                urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                username: "openrelay",
+                credential: "openrelay"
+            }
+        ];
+
+        function logToAndroid(msg) {
+            console.log("[WebRTC-Firebase] " + msg);
+            if(window.AndroidBridge) {
+                AndroidBridge.log(msg);
+            }
+        }
+
+        function getRoomId(peerA, peerB) {
+            return peerA < peerB ? `${peerA}_${peerB}` : `${peerB}_${peerA}`;
+        }
+
+        function applyRotations() {
+            try {
+                const rVid = document.getElementById('remoteVideo');
+                const lVid = document.getElementById('localVideo');
+                rVid.className = '';
+                lVid.className = '';
+                rVid.classList.add('remote-rot-' + remoteRot);
+                lVid.classList.add('local-rot-' + localRot);
+                logToAndroid("Applied video rotations: remote=" + remoteRot + ", local=" + localRot);
+            } catch(e) {
+                logToAndroid("Error applying rotations: " + e);
+            }
+        }
+
+        function setVideoRotations(remote, local) {
+            remoteRot = remote;
+            localRot = local;
+            applyRotations();
+        }
+
+        // Initialize Firebase and set status
+        function initPeer(peerId) {
+            logToAndroid("Initializing WebRTC over Firebase for: " + peerId);
+            myId = peerId;
+
+            if (window.AndroidBridge) {
+                window.AndroidBridge.onConnectionStateChange("connecting");
+            }
+
+            try {
+                if (firebase.apps.length === 0) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                database = firebase.database();
+                
+                // Presence Setup
+                const statusRef = database.ref(`/status/${myId}`);
+                statusRef.set("online");
+                statusRef.onDisconnect().set("offline");
+
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onConnectionStateChange("online");
+                }
+
+                // Listen for personal incoming call invitations
+                database.ref(`/users/${myId}/incomingCall`).on('value', (snapshot) => {
+                    const incoming = snapshot.val();
+                    if (incoming && incoming.from && incoming.from !== myId) {
+                        logToAndroid(`Incoming call invite from ${incoming.from}, isVideo: ${incoming.isVideo}`);
+                        
+                        activeCall = {
+                            remoteId: incoming.from,
+                            isVideo: incoming.isVideo,
+                            roomId: incoming.roomId,
+                            pc: null,
+                            localStream: null
+                        };
+
+                        if (window.AndroidBridge) {
+                            window.AndroidBridge.onIncomingCall(incoming.from, incoming.isVideo);
+                        }
+
+                        // Listen for remote cancellation
+                        database.ref(`/calls/${incoming.roomId}/status`).on('value', (statusSnap) => {
+                            const status = statusSnap.val();
+                            if (status === "canceled") {
+                                logToAndroid("Incoming call canceled by caller.");
+                                endCallQuietly();
+                                if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+                            }
+                        });
+                    }
+                });
+
+                // Listen for fallback direct messages via Firebase (100% Delivery guarantee)
+                database.ref(`/users/${myId}/messages`).on('child_added', (snapshot) => {
+                    const msg = snapshot.val();
+                    if (msg && msg.from && msg.from !== myId) {
+                        logToAndroid("Received fallback chat message from " + msg.from);
+                        handleIncomingData(msg.from, JSON.parse(msg.data));
+                        // Auto-ack / delete to prevent database bloat
+                        snapshot.ref.remove();
+                    }
+                });
+
+            } catch (err) {
+                logToAndroid("Firebase init failure: " + err);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onConnectionStateChange("offline");
+                    window.AndroidBridge.onError("firebase-init-error");
+                }
+            }
+        }
+
+        // Ping and monitor presence of all contacts
+        function pingContacts(idsJson) {
+            try {
+                const ids = JSON.parse(idsJson);
+                logToAndroid("Subscribing to contacts presence: " + JSON.stringify(ids));
+                ids.forEach(id => {
+                    if (id === myId) return;
+
+                    // 1. Monitor online/offline status
+                    database.ref(`/status/${id}`).on('value', (snapshot) => {
+                        const status = snapshot.val();
+                        const isOnline = (status === "online");
+                        logToAndroid(`Presence for ${id} is: ${status} (${isOnline})`);
+                        if (window.AndroidBridge) {
+                            window.AndroidBridge.updatePresence(id, isOnline);
+                        }
+                    });
+
+                    // 2. Automatically listen for P2P DataChannel offers from this friend
+                    registerFriendDataChannelListener(id);
+                });
+            } catch (e) {
+                logToAndroid("Error in pingContacts: " + e);
+            }
+        }
+
+        // --- P2P DATA CHANNEL (CHAT / SIGNALS) ---
+
+        function registerFriendDataChannelListener(friendId) {
+            if (myId < friendId) {
+                // Lexicographically smaller peer starts the P2P connection, so larger peer just listens
+                return;
+            }
+
+            const roomId = getRoomId(myId, friendId);
+            logToAndroid("Registering listener for DataChannel offer from: " + friendId);
+
+            database.ref(`/datachannel_rooms/${roomId}/offer`).on('value', (snapshot) => {
+                const offer = snapshot.val();
+                if (offer && offer.from === friendId) {
+                    logToAndroid("Accepting incoming P2P DataChannel offer from " + friendId);
+                    acceptDataChannelOffer(friendId, offer);
+                }
+            });
+        }
+
+        function connectDataChannel(remoteId) {
+            if (dataConnections[remoteId]) return; // already active
+
+            if (myId > remoteId) {
+                logToAndroid(`Lexicographically smaller peer ${remoteId} should initiate P2P DataChannel. Skipping active connect.`);
+                return;
+            }
+
+            logToAndroid("Initiating P2P DataChannel with " + remoteId);
+            const roomId = getRoomId(myId, remoteId);
+
+            const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+            const dc = pc.createDataChannel("chat", { ordered: true });
+            
+            dataConnections[remoteId] = { pc, dataChannel: dc };
+
+            setupDataChannelEvents(remoteId, dc);
+            setupPeerConnectionEvents(remoteId, pc, "data");
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    database.ref(`/datachannel_rooms/${roomId}/callerCandidates`).push(event.candidate.toJSON());
+                }
+            };
+
+            pc.createOffer().then(offer => {
+                return pc.setLocalDescription(offer);
+            }).then(() => {
+                return database.ref(`/datachannel_rooms/${roomId}/offer`).set({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type,
+                    from: myId
+                });
+            }).catch(err => {
+                logToAndroid("Error creating P2P DataChannel offer: " + err);
+            });
+
+            // Listen for answer
+            database.ref(`/datachannel_rooms/${roomId}/answer`).on('value', (snapshot) => {
+                const answer = snapshot.val();
+                if (answer && answer.sdp && pc.signalingState !== "stable") {
+                    logToAndroid("Setting P2P DataChannel answer on caller");
+                    pc.setRemoteDescription(new RTCSessionDescription(answer)).then(() => {
+                        flushIceCandidates(roomId, pc, "calleeCandidates");
+                    });
+                }
+            });
+
+            // Queue and apply remote callee candidate ICE items
+            database.ref(`/datachannel_rooms/${roomId}/calleeCandidates`).on('child_added', (snapshot) => {
+                const candidate = snapshot.val();
+                if (candidate) {
+                    if (pc.remoteDescription) {
+                        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+                    } else {
+                        if (!pc.queuedCandidates) pc.queuedCandidates = [];
+                        pc.queuedCandidates.push(candidate);
+                    }
+                }
+            });
+        }
+
+        function acceptDataChannelOffer(friendId, offer) {
+            if (dataConnections[friendId]) return; // already handled
+
+            const roomId = getRoomId(myId, friendId);
+            const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+
+            dataConnections[friendId] = { pc, dataChannel: null };
+
+            pc.ondatachannel = (event) => {
+                const dc = event.channel;
+                dataConnections[friendId].dataChannel = dc;
+                setupDataChannelEvents(friendId, dc);
+            };
+
+            setupPeerConnectionEvents(friendId, pc, "data");
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    database.ref(`/datachannel_rooms/${roomId}/calleeCandidates`).push(event.candidate.toJSON());
+                }
+            };
+
+            pc.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
+                flushIceCandidates(roomId, pc, "callerCandidates");
+                return pc.createAnswer();
+            }).then(answer => {
+                return pc.setLocalDescription(answer);
+            }).then(() => {
+                return database.ref(`/datachannel_rooms/${roomId}/answer`).set({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type
+                });
+            }).catch(err => {
+                logToAndroid("Error accepting P2P DataChannel offer: " + err);
+            });
+
+            // Queue and apply remote caller candidate ICE items
+            database.ref(`/datachannel_rooms/${roomId}/callerCandidates`).on('child_added', (snapshot) => {
+                const candidate = snapshot.val();
+                if (candidate) {
+                    if (pc.remoteDescription) {
+                        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+                    } else {
+                        if (!pc.queuedCandidates) pc.queuedCandidates = [];
+                        pc.queuedCandidates.push(candidate);
+                    }
+                }
+            });
+        }
+
+        function flushIceCandidates(roomId, pc, type) {
+            if (pc.queuedCandidates && pc.queuedCandidates.length > 0) {
+                logToAndroid(`Flushing ${pc.queuedCandidates.length} queued candidates of type ${type}`);
+                pc.queuedCandidates.forEach(candidate => {
+                    pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+                });
+                pc.queuedCandidates = [];
+            }
+        }
+
+        function setupDataChannelEvents(remoteId, dc) {
+            dc.onopen = () => {
+                logToAndroid("P2P DataChannel connected with: " + remoteId);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.updatePresence(remoteId, true);
+                }
+
+                if (pendingMessages[remoteId] && pendingMessages[remoteId].length > 0) {
+                    logToAndroid(`Flushing ${pendingMessages[remoteId].length} messages to ${remoteId}`);
+                    while (pendingMessages[remoteId].length > 0) {
+                        const msg = pendingMessages[remoteId].shift();
+                        dc.send(msg);
+                    }
+                }
+            };
+
+            dc.onmessage = (event) => {
+                logToAndroid("Data received via P2P: " + event.data);
+                handleIncomingData(remoteId, JSON.parse(event.data));
+            };
+
+            dc.onclose = () => {
+                logToAndroid("P2P DataChannel closed for " + remoteId);
+                if (dataConnections[remoteId]) {
+                    try { dataConnections[remoteId].pc.close(); } catch(e) {}
+                    delete dataConnections[remoteId];
+                }
+            };
+
+            dc.onerror = (err) => {
+                logToAndroid("DataChannel error for " + remoteId + ": " + err);
+            };
+        }
+
+        // --- GENERAL WEBRTC CONTROL AND LOGGING ---
+
+        function setupPeerConnectionEvents(remoteId, pc, type) {
+            pc.onconnectionstatechange = () => {
+                logToAndroid(`[${type}] PeerConnectionState -> ${pc.connectionState} for ${remoteId}`);
+                if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+                    if (type === "media") {
+                        endCallQuietly();
+                        if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+                    } else if (type === "data") {
+                        if (dataConnections[remoteId]) {
+                            try { dataConnections[remoteId].pc.close(); } catch(e) {}
+                            delete dataConnections[remoteId];
+                        }
+                    }
+                } else if (pc.connectionState === "connected") {
+                    if (type === "media" && window.AndroidBridge) {
+                        window.AndroidBridge.onCallConnected();
+                    }
+                }
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                logToAndroid(`[${type}] ICEConnectionState -> ${pc.iceConnectionState} for ${remoteId}`);
+                if (pc.iceConnectionState === "failed") {
+                    logToAndroid(`[${type}] ICE connection failed. Initiating ICE restart fallback...`);
+                    if (type === "media") {
+                        pc.restartIce();
+                    }
+                }
+            };
+
+            pc.onsignalingstatechange = () => {
+                logToAndroid(`[${type}] SignalingState -> ${pc.signalingState} for ${remoteId}`);
+            };
+
+            if (type === "media") {
+                pc.ontrack = (event) => {
+                    logToAndroid("Remote video/audio track received");
+                    if (event.streams && event.streams[0]) {
+                        document.getElementById('remoteVideo').srcObject = event.streams[0];
+                        applyRotations();
+                        if (window.AndroidBridge) {
+                            window.AndroidBridge.onCallConnected();
+                        }
+                    }
+                };
+            }
+        }
+
+        // --- CHAT MESSAGE OUTBOX ---
+
+        function sendSignalingMessage(remoteId, payload) {
+            sendData(remoteId, JSON.stringify(payload));
+        }
+
+        function sendData(remoteId, jsonData) {
+            const conn = dataConnections[remoteId];
+            if (conn && conn.dataChannel && conn.dataChannel.readyState === "open") {
+                conn.dataChannel.send(jsonData);
+                logToAndroid("Sent data via P2P to " + remoteId);
+            } else {
+                logToAndroid("P2P DataChannel closed or not ready for " + remoteId + ". Falling back to Realtime Database...");
+                
+                // Realtime Database Fallback delivery (Instant delivery bypasses strict NAT blockages)
+                database.ref(`/users/${remoteId}/messages`).push({
+                    from: myId,
+                    data: jsonData,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    logToAndroid("Delivered message securely via Firebase Database to " + remoteId);
+                }).catch(err => {
+                    logToAndroid("Failed to send message via Firebase: " + err);
+                });
+
+                // Enqueue to try sending once P2P connects
+                if (!pendingMessages[remoteId]) {
+                    pendingMessages[remoteId] = [];
+                }
+                pendingMessages[remoteId].push(jsonData);
+
+                // Re-attempt DataChannel establishment
+                connectDataChannel(remoteId);
+            }
+        }
+
+        function sendDataBase64(remoteId, base64Data) {
+            try {
+                const decodedJson = decodeURIComponent(escape(window.atob(base64Data)));
+                sendData(remoteId, decodedJson);
+            } catch (err) {
+                logToAndroid("Error decoding Base64 string payload: " + err);
+            }
+        }
+
+        function handleIncomingData(remoteId, data) {
+            if (data && data.type) {
+                switch(data.type) {
+                    case "ping":
+                        sendSignalingMessage(remoteId, { type: "pong" });
+                        break;
+                    case "pong":
+                        break;
+                    case "call_invite":
+                        // Controlled via incomingCall Firebase ref to prevent race conditions
+                        break;
+                    case "call_ringing":
+                        break;
+                    case "call_accept":
+                        if (window.AndroidBridge) window.AndroidBridge.onCallConnected();
+                        break;
+                    case "call_decline":
+                    case "call_cancel":
+                    case "call_hangup":
+                        endCallQuietly();
+                        if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+                        break;
+                    default:
+                        if (data.type === "message") {
+                            sendSignalingMessage(remoteId, { type: "msg_ack", id: data.id || "" });
+                        }
+                        if (window.AndroidBridge) {
+                            AndroidBridge.onDataReceived(remoteId, JSON.stringify(data));
+                        }
+                        break;
+                }
+            }
+        }
+
+        // --- MEDIA CALLS (AUDIO / VIDEO) ---
+
+        async function startCall(remoteId, isVideo) {
+            logToAndroid(`startCall initiated to: ${remoteId}, video: ${isVideo}`);
+            document.getElementById('video-container').style.display = 'block';
+            applyRotations();
+            callInitiator = true;
+
+            const roomId = getRoomId(myId, remoteId);
+
+            // Fast local media stream initialization
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: isVideo ? { facingMode: "user" } : false
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+
+                const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+                activeCall = {
+                    remoteId,
+                    isVideo,
+                    pc,
+                    localStream,
+                    roomId
+                };
+
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+
+                setupPeerConnectionEvents(remoteId, pc, "media");
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        database.ref(`/calls/${roomId}/callerCandidates`).push(event.candidate.toJSON());
+                    }
+                };
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                // Publish Call Details
+                await database.ref(`/calls/${roomId}/offer`).set({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type,
+                    isVideo: isVideo,
+                    callerId: myId
+                });
+
+                // Listen for Callee Answer SDP
+                database.ref(`/calls/${roomId}/answer`).on('value', async (snapshot) => {
+                    const answer = snapshot.val();
+                    if (answer && answer.sdp && pc.signalingState !== "stable") {
+                        logToAndroid("Setting media call SDP Answer on caller");
+                        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                        flushIceCandidates(roomId, pc, "calleeCandidates");
+                    }
+                });
+
+                // Queue and apply remote Callee candidate ICE items
+                database.ref(`/calls/${roomId}/calleeCandidates`).on('child_added', (snapshot) => {
+                    const candidate = snapshot.val();
+                    if (candidate) {
+                        if (pc.remoteDescription) {
+                            pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+                        } else {
+                            if (!pc.queuedCandidates) pc.queuedCandidates = [];
+                            pc.queuedCandidates.push(candidate);
+                        }
+                    }
+                });
+
+                // Monitor call status controls
+                database.ref(`/calls/${roomId}/status`).on('value', (snapshot) => {
+                    const status = snapshot.val();
+                    if (status) {
+                        logToAndroid("Call status updated to: " + status);
+                        if (status === "declined" || status === "hungup" || status === "canceled") {
+                            endCallQuietly();
+                            if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+                        } else if (status === "accepted") {
+                            if (window.AndroidBridge) window.AndroidBridge.onCallConnected();
+                        }
+                    }
+                });
+
+                // Signal Callee of the incoming call notification
+                await database.ref(`/users/${remoteId}/incomingCall`).set({
+                    from: myId,
+                    roomId: roomId,
+                    isVideo: isVideo,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                });
+
+            } catch (err) {
+                logToAndroid("Error initializing media for outbound call: " + err);
+                if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+            }
+        }
+
+        async function answerCall(isVideo) {
+            logToAndroid("answerCall initiated by callee, video: " + isVideo);
+            if (!activeCall) {
+                logToAndroid("Error: answerCall triggered with no active incoming session.");
+                if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+                return;
+            }
+
+            document.getElementById('video-container').style.display = 'block';
+            applyRotations();
+            callInitiator = false;
+
+            const remoteId = activeCall.remoteId;
+            const roomId = activeCall.roomId;
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: isVideo ? { facingMode: "user" } : false
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+
+                const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+                activeCall.pc = pc;
+                activeCall.localStream = localStream;
+
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+
+                setupPeerConnectionEvents(remoteId, pc, "media");
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        database.ref(`/calls/${roomId}/calleeCandidates`).push(event.candidate.toJSON());
+                    }
+                };
+
+                // Read SDP Offer from Room
+                const offerSnap = await database.ref(`/calls/${roomId}/offer`).once('value');
+                const offer = offerSnap.val();
+                if (!offer) {
+                    throw new Error("Outbound caller offer not found!");
+                }
+
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                flushIceCandidates(roomId, pc, "callerCandidates");
+
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                // Publish Call Answer SDP
+                await database.ref(`/calls/${roomId}/answer`).set({
+                    sdp: pc.localDescription.sdp,
+                    type: pc.localDescription.type
+                });
+
+                // Queue and apply remote Caller candidate ICE items
+                database.ref(`/calls/${roomId}/callerCandidates`).on('child_added', (snapshot) => {
+                    const candidate = snapshot.val();
+                    if (candidate) {
+                        if (pc.remoteDescription) {
+                            pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+                        } else {
+                            if (!pc.queuedCandidates) pc.queuedCandidates = [];
+                            pc.queuedCandidates.push(candidate);
+                        }
+                    }
+                });
+
+                // Publish accepted call status
+                await database.ref(`/calls/${roomId}/status`).set("accepted");
+
+                // Dismiss callee notification node
+                database.ref(`/users/${myId}/incomingCall`).remove();
+
+            } catch (err) {
+                logToAndroid("Error initializing media/handshake for answered call: " + err);
+                if (window.AndroidBridge) window.AndroidBridge.onCallDisconnected();
+            }
+        }
+
+        function endCall() {
+            logToAndroid("endCall triggered by user command.");
+            if (!activeCall) return;
+
+            const roomId = activeCall.roomId || getRoomId(myId, activeCall.remoteId);
+
+            try {
+                const statusRef = database.ref(`/calls/${roomId}/status`);
+                if (callInitiator) {
+                    const isConnected = activeCall.pc && (activeCall.pc.connectionState === "connected");
+                    statusRef.set(isConnected ? "hungup" : "canceled");
+                } else {
+                    const isConnected = activeCall.pc && (activeCall.pc.connectionState === "connected");
+                    statusRef.set(isConnected ? "hungup" : "declined");
+                }
+
+                // Delete notification states
+                database.ref(`/users/${activeCall.remoteId}/incomingCall`).remove();
+                database.ref(`/users/${myId}/incomingCall`).remove();
+            } catch(e) {}
+
+            cleanupActiveCallQuietly();
+        }
+
+        function cleanupActiveCallQuietly() {
+            logToAndroid("Cleaning up active call context and media...");
+            if (activeCall) {
+                const roomId = activeCall.roomId || getRoomId(myId, activeCall.remoteId);
+                
+                try {
+                    database.ref(`/calls/${roomId}/status`).off();
+                    database.ref(`/calls/${roomId}/offer`).off();
+                    database.ref(`/calls/${roomId}/answer`).off();
+                    database.ref(`/calls/${roomId}/callerCandidates`).off();
+                    database.ref(`/calls/${roomId}/calleeCandidates`).off();
+                } catch(e) {}
+
+                if (activeCall.pc) {
+                    try { activeCall.pc.close(); } catch(e) {}
+                }
+                activeCall = null;
+            }
+
+            if (localStream) {
+                try {
+                    localStream.getTracks().forEach(track => track.stop());
+                } catch(e) {}
+                localStream = null;
+            }
+
+            document.getElementById('video-container').style.display = 'none';
+            document.getElementById('remoteVideo').srcObject = null;
+            document.getElementById('localVideo').srcObject = null;
+        }
+
+        function endCallQuietly() {
+            cleanupActiveCallQuietly();
+        }
+
+        function toggleMute(isMuted) {
+            if(localStream) {
+                localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
+                logToAndroid("Local mic mute status set to: " + isMuted);
+            }
+        }
+
+        function toggleVideo(isVideoOff) {
+            if(localStream) {
+                localStream.getVideoTracks().forEach(track => track.enabled = !isVideoOff);
+                logToAndroid("Local camera video track status set to: " + isVideoOff);
+            }
+        }
+    </script>
+</body>
+</html>
