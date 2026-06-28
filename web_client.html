@@ -33,11 +33,9 @@
         <h2>🔒 S7 Call - Laptop Test Client</h2>
         
         <div id="setup-view">
-            <label>1. Your Secure Name:</label>
+            <label>Your Name:</label>
             <input type="text" id="my-name" value="Laptop Client">
-            
-            <label>2. Your Secure ID (Laptop):</label>
-            <input type="text" id="my-id" value="SEC-LAPTOP-DEV">
+            <input type="hidden" id="my-id">
             
             <hr style="border: 0; border-top: 1px solid #2d2d44; margin: 15px 0;">
             
@@ -135,6 +133,12 @@
         }
 
         let activeRoomId = "";
+
+        // ponytail: auto-generate a random device ID so user doesn't have to
+        document.addEventListener('DOMContentLoaded', () => {
+            const r = () => Math.floor(100 + Math.random() * 900);
+            document.getElementById('my-id').value = `SEC-WEB-${r()}-${r()}`;
+        });
 
         function showJoinPanel() {
             document.getElementById('choice-buttons').style.display = 'none';
