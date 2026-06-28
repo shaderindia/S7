@@ -209,8 +209,13 @@ object PeerJSManager {
 
     fun onAppForeground() {
         Log.d(TAG, "App foregrounded, ensuring signaling connection is active...")
+        val firebaseApp = try { com.google.firebase.FirebaseApp.getInstance() } catch(e: Exception) { null }
+        val options = firebaseApp?.options
+        val apiKey = options?.apiKey ?: ""
+        val databaseUrl = options?.databaseUrl ?: ""
+        val projectId = options?.projectId ?: ""
         Handler(Looper.getMainLooper()).post {
-            webView?.evaluateJavascript("initPeer('$myId')", null)
+            webView?.evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')", null)
         }
     }
 

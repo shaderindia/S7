@@ -129,10 +129,19 @@
         }
 
         // Initialize Firebase and set status dynamically
+        let firebaseInitialized = false;
         function initPeer(peerId, apiKey, databaseURL, projectId) {
             firebaseConfig.apiKey = apiKey;
             firebaseConfig.databaseURL = databaseURL;
             firebaseConfig.projectId = projectId;
+
+            // Detach old listeners before re-init to prevent duplicate handlers
+            if (database && myId) {
+                try {
+                    database.ref(`/users/${myId}/incomingCall`).off();
+                    database.ref(`/users/${myId}/messages`).off();
+                } catch(e) {}
+            }
 
             logToAndroid("Initializing WebRTC over Firebase for: " + peerId);
             myId = peerId;
@@ -145,17 +154,20 @@
                 if (firebase.apps.length === 0) {
                     firebase.initializeApp(firebaseConfig);
                 }
-                database = firebase.database();
-                
-                // Override database.ref to replace dots with underscores in Firebase paths
-                const originalRef = database.ref;
-                database.ref = function(path) {
-                    if (path) {
-                        const sanitizedPath = path.replace(/\./g, '_');
-                        return originalRef.call(database, sanitizedPath);
-                    }
-                    return originalRef.call(database);
-                };
+
+                // ponytail: only override database.ref once to prevent infinite recursion
+                if (!firebaseInitialized) {
+                    database = firebase.database();
+                    const originalRef = database.ref;
+                    database.ref = function(path) {
+                        if (path) {
+                            const sanitizedPath = path.replace(/\./g, '_');
+                            return originalRef.call(database, sanitizedPath);
+                        }
+                        return originalRef.call(database);
+                    };
+                    firebaseInitialized = true;
+                }
                 
                 // Presence Setup
                 const statusRef = database.ref(`/status/${myId}`);
@@ -765,6 +777,8 @@
                     database.ref(`/calls/${roomId}/answer`).off();
                     database.ref(`/calls/${roomId}/callerCandidates`).off();
                     database.ref(`/calls/${roomId}/calleeCandidates`).off();
+                    // ponytail: delete stale signaling data so future calls don't collide with old SDP/ICE
+                    database.ref(`/calls/${roomId}`).remove();
                 } catch(e) {}
 
                 if (activeCall.pc) {
