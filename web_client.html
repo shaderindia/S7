@@ -75,6 +75,7 @@
                     <button onclick="makeCall(false)" style="background: #16a34a; margin:0;">📞 Audio Call</button>
                     <button onclick="makeCall(true)" style="background: #059669; margin:0;">📹 Video Call</button>
                     <button id="end-btn" onclick="hangup()" style="background: #dc2626; margin:0; display:none;">Hang Up</button>
+                    <button onclick="exitRoom()" style="background: #dc2626; margin:0;">🚪 Exit Room</button>
                 </div>
             </div>
 
@@ -254,6 +255,39 @@
             showChoiceButtons();
         }
 
+        function exitRoom() {
+            log("Exiting room...");
+            try {
+                if (database) {
+                    // Stop presence tracking and set offline
+                    database.ref(`/status/${myId}`).set("offline");
+                    database.ref(`/status/${myId}`).off();
+                    database.ref(`/status/${phoneId}`).off();
+                    database.ref(`/users/${myId}/messages`).off();
+                    database.ref(`/users/${myId}/incomingCall`).off();
+                }
+            } catch(e) {
+                log("Error cleaning up listeners: " + e);
+            }
+
+            // Hang up call if active
+            hangup();
+
+            // Clear chat history
+            document.getElementById('chat-history').innerHTML = "";
+            phoneId = "";
+            activeRoomId = "";
+
+            // Reset UI state
+            document.getElementById('setup-view').style.display = 'block';
+            document.getElementById('main-view').style.display = 'none';
+            const badge = document.getElementById('status-display');
+            badge.innerText = "Offline";
+            badge.className = "status-badge";
+            
+            showChoiceButtons();
+        }
+
         function onMatchingSuccess() {
             // Set presence online
             const statusRef = database.ref(`/status/${myId}`);
@@ -380,15 +414,15 @@
                     document.getElementById('remoteVideo').srcObject = event.streams[0];
                 };
 
-                pc.onicecandidate = (event) => {
-                    if (event.candidate) {
-                        database.ref(`/calls/${callRoomId}/calleeCandidates`).push(event.candidate.toJSON());
-                    }
-                };
+                let myCandidatePath = "";
+                let remoteCandidatePath = "";
 
                 // Answer incoming or start new
                 if (callRoomId) {
-                    // We are answering an incoming call
+                    // We are answering an incoming call (Callee)
+                    myCandidatePath = `/calls/${callRoomId}/calleeCandidates`;
+                    remoteCandidatePath = `/calls/${callRoomId}/callerCandidates`;
+                    
                     log("Answering call...");
                     const offerSnap = await database.ref(`/calls/${callRoomId}/offer`).once('value');
                     const offer = offerSnap.val();
@@ -405,8 +439,11 @@
                     await database.ref(`/calls/${callRoomId}/status`).set("accepted");
                     await database.ref(`/users/${myId}/incomingCall`).remove();
                 } else {
-                    // We are initiating a call
+                    // We are initiating a call (Caller)
                     callRoomId = myId < phoneId ? `${myId}_${phoneId}` : `${phoneId}_${myId}`;
+                    myCandidatePath = `/calls/${callRoomId}/callerCandidates`;
+                    remoteCandidatePath = `/calls/${callRoomId}/calleeCandidates`;
+                    
                     log(`Calling room: ${callRoomId}`);
                     
                     const offer = await pc.createOffer();
@@ -437,8 +474,14 @@
                     });
                 }
 
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        database.ref(myCandidatePath).push(event.candidate.toJSON());
+                    }
+                };
+
                 // Listen for candidates from phone
-                database.ref(`/calls/${callRoomId}/callerCandidates`).on('child_added', (snap) => {
+                database.ref(remoteCandidatePath).on('child_added', (snap) => {
                     const candidate = snap.val();
                     if (candidate && pc) {
                         pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
@@ -461,6 +504,15 @@
         }
 
         function cleanupCall() {
+            if (database && callRoomId) {
+                try {
+                    database.ref(`/calls/${callRoomId}/status`).off();
+                    database.ref(`/calls/${callRoomId}/answer`).off();
+                    database.ref(`/calls/${callRoomId}/callerCandidates`).off();
+                    database.ref(`/calls/${callRoomId}/calleeCandidates`).off();
+                    database.ref(`/calls/${callRoomId}`).remove();
+                } catch(e) {}
+            }
             if (pc) {
                 pc.close();
                 pc = null;

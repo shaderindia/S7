@@ -150,6 +150,26 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun exitRoom(contact: Contact) {
+        viewModelScope.launch {
+            val match = "ROOM_WAITING_(\\d+)".toRegex().find(contact.id)
+            val code = match?.groupValues?.get(1)
+            if (code != null) {
+                PeerJSManager.cancelRoom(code)
+            } else {
+                val currentRoom = activeRoomId.value
+                if (currentRoom != null) {
+                    PeerJSManager.cancelRoom(currentRoom)
+                }
+            }
+            repository.contactDao.deleteContact(contact)
+            selectContact(null)
+            roomStatus.value = "idle"
+            activeRoomId.value = null
+            pendingRoomCode.value = null
+        }
+    }
+
     fun cancelMatching() {
         val currentRoom = activeRoomId.value
         if (currentRoom != null) {

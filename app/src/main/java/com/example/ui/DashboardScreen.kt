@@ -1768,6 +1768,7 @@ fun ChatRoomView(
 
     var messageText by remember { mutableStateOf("") }
     var showVerifyDialog by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
     val myId = myProfile?.mySecureId ?: "SEC-814-297-ZPH"
 
     var selectedDisappearDuration by remember { mutableStateOf(disappearingTime) }
@@ -1838,6 +1839,34 @@ fun ChatRoomView(
                     // Video call
                     IconButton(onClick = { viewModel.initiateCall(contact, CallType.VIDEO) }) {
                         Icon(Icons.Filled.VideoCall, "Video Call")
+                    }
+                    // Exit Room
+                    IconButton(onClick = { showExitConfirm = true }) {
+                        Icon(Icons.Filled.Logout, "Exit Room", tint = MaterialTheme.colorScheme.error)
+                    }
+
+                    if (showExitConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showExitConfirm = false },
+                            title = { Text("Exit Room?") },
+                            text = { Text("This will disconnect from the peer and delete the room/contact. All message history will be removed.") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showExitConfirm = false
+                                        viewModel.exitRoom(contact)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Exit Room")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showExitConfirm = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
