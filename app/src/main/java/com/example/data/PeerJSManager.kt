@@ -42,7 +42,10 @@ object PeerJSManager {
         val firebaseApp = try { FirebaseApp.getInstance() } catch(e: Exception) { null }
         val options = firebaseApp?.options
         val apiKey = options?.apiKey ?: ""
-        val databaseUrl = options?.databaseUrl ?: ""
+        var databaseUrl = options?.databaseUrl ?: ""
+        if (databaseUrl.isEmpty()) {
+            databaseUrl = "https://nsgb-gaming-default-rtdb.firebaseio.com"
+        }
         val projectId = options?.projectId ?: ""
 
         Handler(Looper.getMainLooper()).post {
@@ -212,7 +215,10 @@ object PeerJSManager {
         val firebaseApp = try { com.google.firebase.FirebaseApp.getInstance() } catch(e: Exception) { null }
         val options = firebaseApp?.options
         val apiKey = options?.apiKey ?: ""
-        val databaseUrl = options?.databaseUrl ?: ""
+        var databaseUrl = options?.databaseUrl ?: ""
+        if (databaseUrl.isEmpty()) {
+            databaseUrl = "https://nsgb-gaming-default-rtdb.firebaseio.com"
+        }
         val projectId = options?.projectId ?: ""
         Handler(Looper.getMainLooper()).post {
             webView?.evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')", null)
