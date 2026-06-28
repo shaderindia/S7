@@ -98,6 +98,13 @@
         ];
 
         function logToAndroid(msg) {
+            if (typeof msg === 'string') {
+                msg = msg.replace(/openrelay/g, '***');
+                msg = msg.replace(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[HIDDEN_IP]');
+                if (msg.includes("candidate:") || msg.includes("icecandidate") || msg.includes("sdp")) {
+                    return;
+                }
+            }
             console.log("[WebRTC-Firebase] " + msg);
             if(window.AndroidBridge) {
                 AndroidBridge.log(msg);
@@ -289,7 +296,10 @@
             logToAndroid("Initiating P2P DataChannel with " + remoteId);
             const roomId = getRoomId(myId, remoteId);
 
-            const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+            const pc = new RTCPeerConnection({ 
+                iceServers: defaultIceServers,
+                iceTransportPolicy: "relay"
+            });
             const dc = pc.createDataChannel("chat", { ordered: true });
             
             dataConnections[remoteId] = { pc, dataChannel: dc };
@@ -344,7 +354,10 @@
             if (dataConnections[friendId]) return; // already handled
 
             const roomId = getRoomId(myId, friendId);
-            const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+            const pc = new RTCPeerConnection({ 
+                iceServers: defaultIceServers,
+                iceTransportPolicy: "relay"
+            });
 
             dataConnections[friendId] = { pc, dataChannel: null };
 
@@ -581,7 +594,10 @@
                 });
                 document.getElementById('localVideo').srcObject = localStream;
 
-                const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+                const pc = new RTCPeerConnection({ 
+                    iceServers: defaultIceServers,
+                    iceTransportPolicy: "relay"
+                });
                 activeCall = {
                     remoteId,
                     isVideo,
@@ -686,7 +702,10 @@
                 });
                 document.getElementById('localVideo').srcObject = localStream;
 
-                const pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+                const pc = new RTCPeerConnection({ 
+                    iceServers: defaultIceServers,
+                    iceTransportPolicy: "relay"
+                });
                 activeCall.pc = pc;
                 activeCall.localStream = localStream;
 
