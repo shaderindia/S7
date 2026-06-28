@@ -135,6 +135,16 @@
             firebase.initializeApp(firebaseConfig);
             database = firebase.database();
 
+            // Override database.ref to replace dots with underscores in Firebase paths
+            const originalRef = database.ref;
+            database.ref = function(path) {
+                if (path) {
+                    const sanitizedPath = path.replace(/\./g, '_');
+                    return originalRef.call(database, sanitizedPath);
+                }
+                return originalRef.call(database);
+            };
+
             // Set presence online
             const statusRef = database.ref(`/status/${myId}`);
             statusRef.set("online");
@@ -165,6 +175,9 @@
                         if (data.type === "message") {
                             addMessageToHistory(data.text, false);
                             log(`New E2EE Message received from phone.`);
+                        } else if (data.type === "profile_request") {
+                            log("Received profile name request from phone, sending response...");
+                            sendProfileResponse(msg.from);
                         }
                     } catch(e) {
                         log("Error parsing message payload: " + e);
@@ -343,6 +356,20 @@
                 database.ref(`/users/${phoneId}/incomingCall`).remove();
             }
             cleanupCall();
+        }
+
+        function sendProfileResponse(remoteId) {
+            const myName = document.getElementById('my-name').value.trim() || "Laptop Client";
+            const payload = {
+                type: "profile_response",
+                name: myName
+            };
+            log(`Sending profile response to ${remoteId}: ${myName}`);
+            database.ref(`/users/${remoteId}/messages`).push({
+                from: myId,
+                data: JSON.stringify(payload),
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
         }
     </script>
 </body>

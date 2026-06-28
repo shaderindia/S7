@@ -143,6 +143,16 @@
                 }
                 database = firebase.database();
                 
+                // Override database.ref to replace dots with underscores in Firebase paths
+                const originalRef = database.ref;
+                database.ref = function(path) {
+                    if (path) {
+                        const sanitizedPath = path.replace(/\./g, '_');
+                        return originalRef.call(database, sanitizedPath);
+                    }
+                    return originalRef.call(database);
+                };
+                
                 // Presence Setup
                 const statusRef = database.ref(`/status/${myId}`);
                 statusRef.set("online");
