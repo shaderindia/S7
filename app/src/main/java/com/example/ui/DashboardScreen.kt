@@ -1764,6 +1764,7 @@ fun ChatRoomView(
     val myProfile by viewModel.myProfile.collectAsState()
     val disappearingTime by viewModel.currentDisappearingTime.collectAsState()
     val peerConnectionState by viewModel.peerConnectionState.collectAsState()
+    val pendingRoomCode by viewModel.pendingRoomCode.collectAsState()
 
     var messageText by remember { mutableStateOf("") }
     var showVerifyDialog by remember { mutableStateOf(false) }
@@ -1851,6 +1852,43 @@ fun ChatRoomView(
                 .padding(paddingValues)
                 .background(chatBgColor)
         ) {
+            // Room code banner — visible only while creator is waiting for friend
+            val context2 = LocalContext.current
+            val clipboardManager2 = LocalClipboardManager.current
+            if (pendingRoomCode != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A3A2A)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Share Room Code", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981), letterSpacing = 0.5.sp)
+                            Text(
+                                text = pendingRoomCode!!,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 22.sp,
+                                color = Color.White,
+                                letterSpacing = 2.sp
+                            )
+                            Text("Waiting for friend to join...", fontSize = 11.sp, color = Color(0xFF10B981).copy(alpha = 0.7f))
+                        }
+                        IconButton(onClick = {
+                            clipboardManager2.setText(AnnotatedString(pendingRoomCode!!))
+                            Toast.makeText(context2, "Room code copied!", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color(0xFF10B981))
+                        }
+                    }
+                }
+            }
+
             // E2EE Shield Verification Banner
             Card(
                 onClick = { showVerifyDialog = true },

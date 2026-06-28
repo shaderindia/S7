@@ -101,6 +101,7 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
 
     val activeRoomId = MutableStateFlow<String?>(null)
     val roomStatus = MutableStateFlow<String>("idle") // "idle", "waiting", "joining", "matched", "error"
+    val pendingRoomCode = MutableStateFlow<String?>(null) // visible to user until friend joins
 
     fun startCreateRoom() {
         viewModelScope.launch {
@@ -111,6 +112,7 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
             val code = (100000..999999).random().toString()
             activeRoomId.value = code
             roomStatus.value = "waiting"
+            pendingRoomCode.value = code
 
             PeerJSManager.createRoom(code, myIdVal, myName)
 
@@ -304,6 +306,7 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     )
                     roomStatus.value = "matched"
                     activeRoomId.value = null
+                    pendingRoomCode.value = null
 
                     val addedContact = repository.contactDao.getContactById(remoteId)
                     if (addedContact != null) {
