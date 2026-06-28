@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import com.google.firebase.FirebaseApp
 
 object PeerJSManager {
     private const val TAG = "PeerJSManager"
@@ -38,6 +39,12 @@ object PeerJSManager {
         repository = repo
         myId = peerId
         
+        val firebaseApp = try { FirebaseApp.getInstance() } catch(e: Exception) { null }
+        val options = firebaseApp?.options
+        val apiKey = options?.apiKey ?: ""
+        val databaseUrl = options?.databaseUrl ?: ""
+        val projectId = options?.projectId ?: ""
+
         Handler(Looper.getMainLooper()).post {
             if (webView == null) {
                 // Ensure cache directories exist to prevent benign Chromium opendir warnings
@@ -70,7 +77,7 @@ object PeerJSManager {
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             Log.d(TAG, "PeerJS bridge loaded, initializing peer...")
-                            evaluateJavascript("initPeer('$myId')") {}
+                            evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')") {}
                         }
                     }
                     addJavascriptInterface(this@PeerJSManager, "AndroidBridge")
@@ -78,7 +85,7 @@ object PeerJSManager {
                 webView?.loadUrl("file:///android_asset/peerjs_app.html")
             } else {
                 Log.d(TAG, "Re-initializing existing peer in WebView with new ID: $myId")
-                webView?.evaluateJavascript("initPeer('$myId')", null)
+                webView?.evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')", null)
             }
         }
     }

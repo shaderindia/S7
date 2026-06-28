@@ -57,11 +57,11 @@
         <video id="localVideo" autoplay playsinline muted></video>
     </div>
     <script>
-        // WebRTC & Firebase Realtime Database Config
+        // WebRTC & Firebase Realtime Database Config (populated dynamically at runtime)
         const firebaseConfig = {
-            apiKey: "AIzaSyDEWlbt3iFpK8iUACfgAVocsOe2PaDDpok",
-            databaseURL: "https://nsgb-gaming-default-rtdb.firebaseio.com",
-            projectId: "nsgb-gaming"
+            apiKey: "",
+            databaseURL: "",
+            projectId: ""
         };
 
         let database = null;
@@ -128,8 +128,12 @@
             applyRotations();
         }
 
-        // Initialize Firebase and set status
-        function initPeer(peerId) {
+        // Initialize Firebase and set status dynamically
+        function initPeer(peerId, apiKey, databaseURL, projectId) {
+            firebaseConfig.apiKey = apiKey;
+            firebaseConfig.databaseURL = databaseURL;
+            firebaseConfig.projectId = projectId;
+
             logToAndroid("Initializing WebRTC over Firebase for: " + peerId);
             myId = peerId;
 
