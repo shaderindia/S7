@@ -254,6 +254,12 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     endCall()
                 } else if (errorType == "network" || errorType == "disconnected") {
                     _peerConnectionState.value = "offline"
+                } else if (errorType == "room-not-found" || errorType == "room-create-error") {
+                    viewModelScope.launch {
+                        Toast.makeText(getApplication(), "Room not found or expired. Try again.", Toast.LENGTH_LONG).show()
+                    }
+                    activeRoomId.value = null
+                    roomStatus.value = "idle"
                 }
             }
 

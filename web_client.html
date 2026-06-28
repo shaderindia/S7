@@ -184,7 +184,7 @@
             
             log(`Creating matching room: ${code}`);
             
-            const roomRef = database.ref(`/rooms/${code}`);
+            const roomRef = database.ref(`/users/ROOM_${code}`);
             roomRef.set({
                 creator: {
                     id: myId,
@@ -220,7 +220,7 @@
             initFirebase();
             
             log(`Attempting to join room: ${code}`);
-            const roomRef = database.ref(`/rooms/${code}`);
+            const roomRef = database.ref(`/users/ROOM_${code}`);
             
             roomRef.child("creator").once('value').then((snap) => {
                 const creator = snap.val();
@@ -243,8 +243,8 @@
 
         function cancelMatching() {
             if (database && activeRoomId) {
-                database.ref(`/rooms/${activeRoomId}`).off();
-                database.ref(`/rooms/${activeRoomId}`).remove();
+                database.ref(`/users/ROOM_${activeRoomId}`).off();
+                database.ref(`/users/ROOM_${activeRoomId}`).remove();
             }
             activeRoomId = "";
             showChoiceButtons();
