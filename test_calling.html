@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebRTC Calling E2E Test</title>
+    <style>
+        body { font-family: sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+        .container { display: flex; gap: 20px; }
+        iframe { width: 45%; height: 400px; border: 2px solid #45475a; border-radius: 8px; background: #11111b; }
+        #results { margin-top: 20px; padding: 15px; border-radius: 8px; background: #313244; font-size: 1.2em; }
+        .success { color: #a6e3a1; font-weight: bold; }
+        .failure { color: #f38ba8; font-weight: bold; }
+        .log-box { margin-top: 10px; height: 150px; overflow-y: scroll; background: #181825; padding: 10px; font-family: monospace; font-size: 0.9em; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>WebRTC calling test</h1>
+    <div class="container">
+        <div>
+            <h3>User A (Caller)</h3>
+            <iframe id="iframeA"></iframe>
+        </div>
+        <div>
+            <h3>User B (Callee)</h3>
+            <iframe id="iframeB"></iframe>
+        </div>
+    </div>
+    
+    <div id="results">Running WebRTC test...</div>
+    <h3>Test Logs</h3>
+    <div id="logs" class="log-box"></div>
+
+    <script>
+        function log(msg) {
+            console.log(msg);
+            const logsDiv = document.getElementById('logs');
+            logsDiv.innerHTML += `<div>${msg}</div>`;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        const iframeA = document.getElementById('iframeA');
+        const iframeB = document.getElementById('iframeB');
+
+        let userAConnected = false;
+        let userBConnected = false;
+
+        function checkSuccess() {
+            if (userAConnected && userBConnected) {
+                document.getElementById('results').innerHTML = '<span class="success">SUCCESS: Two people successfully connected and called each other!</span>';
+                log("TEST COMPLETED SUCCESSFULLY!");
+            }
+        }
+
+        function setupPeerFrame(iframe, myId, targetId, isCaller) {
+            // Load the actual peerjs_app.html
+            iframe.src = "/app/src/main/assets/peerjs_app.html";
+            
+            iframe.onload = () => {
+                const win = iframe.contentWindow;
+                
+                // 1. Mock getUserMedia using canvas captureStream
+                const canvas = win.document.createElement('canvas');
+                canvas.width = 320;
+                canvas.height = 240;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = isCaller ? 'blue' : 'green';
+                ctx.fillRect(0, 0, 320, 240);
+                
+                // Keep drawing simple animations to keep the stream active
+                let count = 0;
+                setInterval(() => {
+                    ctx.fillStyle = isCaller ? 'blue' : 'green';
+                    ctx.fillRect(0, 0, 320, 240);
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(`${myId} - frame ${count++}`, 20, 50);
+                }, 100);
+
+                const mockStream = canvas.captureStream(10);
+                
+                // Override navigator.mediaDevices.getUserMedia
+                if (!win.navigator.mediaDevices) {
+                    win.navigator.mediaDevices = {};
+                }
+                win.navigator.mediaDevices.getUserMedia = async (constraints) => {
+                    log(`[${myId}] getUserMedia mock stream retrieved`);
+                    return mockStream;
+                };
+
+                // 2. Define the AndroidBridge
+                win.AndroidBridge = {
+                    log: (msg) => {
+                        log(`[${myId} JS] ${msg}`);
+                    },
+                    onConnectionStateChange: (state) => {
+                        log(`[${myId} Connection State] ${state}`);
+                        if (state === "online") {
+                            // Once online, ping target
+                            setTimeout(() => {
+                                log(`[${myId}] Pinging contact ${targetId}`);
+                                win.pingContacts(JSON.stringify([targetId]));
+                                
+                                // If caller, initiate call after a short delay
+                                if (isCaller) {
+                                    setTimeout(() => {
+                                        log(`[${myId}] Initiating call to ${targetId}`);
+                                        win.startCall(targetId, true);
+                                    }, 2000);
+                                }
+                            }, 1000);
+                        }
+                    },
+                    onIncomingCall: (from, isVideo) => {
+                        log(`[${myId}] Incoming call from ${from}`);
+                        if (!isCaller && from === targetId) {
+                            setTimeout(() => {
+                                log(`[${myId}] Answering call from ${from}`);
+                                win.answerCall(isVideo);
+                            }, 1500);
+                        }
+                    },
+                    onCallConnected: () => {
+                        log(`[${myId}] Call Connected!`);
+                        if (isCaller) userAConnected = true;
+                        else userBConnected = true;
+                        checkSuccess();
+                    },
+                    onCallDisconnected: () => {
+                        log(`[${myId}] Call Disconnected!`);
+                    },
+                    updatePresence: (id, isOnline) => {
+                        log(`[${myId} Presence] Contact ${id} is online: ${isOnline}`);
+                    },
+                    onDataReceived: (remoteId, jsonStr) => {
+                        log(`[${myId} Chat] Received from ${remoteId}: ${jsonStr}`);
+                    }
+                };
+
+                // 3. Initialize PeerJS
+                log(`[${myId}] Initializing peer...`);
+                win.initPeer(myId);
+            };
+        }
+
+        // Run setup for both users
+        setTimeout(() => {
+            setupPeerFrame(iframeA, "userA", "userB", true);
+            setupPeerFrame(iframeB, "userB", "userA", false);
+        }, 500);
+
+        // Fail-safe timeout
+        setTimeout(() => {
+            if (!userAConnected || !userBConnected) {
+                document.getElementById('results').innerHTML = '<span class="failure">FAILURE: Connection timed out after 30 seconds.</span>';
+                log("TEST FAILED due to timeout");
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
