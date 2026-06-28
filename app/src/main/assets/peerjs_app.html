@@ -171,7 +171,11 @@
                 
                 // Presence Setup
                 const statusRef = database.ref(`/status/${myId}`);
-                statusRef.set("online");
+                statusRef.set("online").then(() => {
+                    logToAndroid("Presence write success!");
+                }).catch((err) => {
+                    logToAndroid("Presence write failed: " + err);
+                });
                 statusRef.onDisconnect().set("offline");
 
                 if (window.AndroidBridge) {

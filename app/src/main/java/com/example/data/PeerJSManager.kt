@@ -44,7 +44,7 @@ object PeerJSManager {
         val apiKey = options?.apiKey ?: ""
         var databaseUrl = options?.databaseUrl ?: ""
         if (databaseUrl.isEmpty()) {
-            databaseUrl = "https://nsgb-gaming-default-rtdb.firebaseio.com"
+            databaseUrl = "https://nsgb-gaming.firebaseio.com"
         }
         val projectId = options?.projectId ?: ""
 
@@ -79,7 +79,7 @@ object PeerJSManager {
                         override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                             consoleMessage?.let {
                                 val msg = "WebView Console [${it.messageLevel()}]: ${it.message()} at ${it.sourceId()}:${it.lineNumber()}"
-                                Log.d(TAG, msg)
+                                Log.i(TAG, msg)
                                 Handler(Looper.getMainLooper()).post {
                                     onLogCallback?.invoke(msg)
                                 }
@@ -89,7 +89,7 @@ object PeerJSManager {
                     }
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            Log.d(TAG, "PeerJS bridge loaded, initializing peer...")
+                            Log.i(TAG, "PeerJS bridge loaded, initializing peer...")
                             evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')") {}
                         }
                     }
@@ -97,7 +97,7 @@ object PeerJSManager {
                 }
                 webView?.loadUrl("file:///android_asset/peerjs_app.html")
             } else {
-                Log.d(TAG, "Re-initializing existing peer in WebView with new ID: $myId")
+                Log.i(TAG, "Re-initializing existing peer in WebView with new ID: $myId")
                 webView?.evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')", null)
             }
         }
@@ -105,7 +105,7 @@ object PeerJSManager {
 
     @JavascriptInterface
     fun log(msg: String) {
-        Log.d(TAG, "[JS] $msg")
+        Log.i(TAG, "[JS] $msg")
         Handler(Looper.getMainLooper()).post {
             onLogCallback?.invoke(msg)
         }
@@ -113,7 +113,7 @@ object PeerJSManager {
 
     @JavascriptInterface
     fun onConnectionStateChange(state: String) {
-        Log.d(TAG, "Connection state changed: $state")
+        Log.i(TAG, "Connection state changed: $state")
         Handler(Looper.getMainLooper()).post {
             onConnectionStateChangeCallback?.invoke(state)
         }
@@ -128,7 +128,7 @@ object PeerJSManager {
         // Handle reconnect if network fails
         if (type == "network" || type == "disconnected") {
             Handler(Looper.getMainLooper()).postDelayed({
-                Log.d(TAG, "Attempting reconnect...")
+                Log.i(TAG, "Attempting reconnect...")
                 webView?.evaluateJavascript("if(peer) peer.reconnect();", null)
             }, 3000)
         }
@@ -190,7 +190,7 @@ object PeerJSManager {
 
     @JavascriptInterface
     fun onCallConnected() {
-        Log.d(TAG, "onCallConnected triggered from Javascript")
+        Log.i(TAG, "onCallConnected triggered from Javascript")
         Handler(Looper.getMainLooper()).post {
             onCallConnectedCallback?.invoke()
         }
@@ -198,7 +198,7 @@ object PeerJSManager {
 
     @JavascriptInterface
     fun onCallDisconnected() {
-        Log.d(TAG, "onCallDisconnected triggered from Javascript")
+        Log.i(TAG, "onCallDisconnected triggered from Javascript")
         Handler(Looper.getMainLooper()).post {
             onCallDisconnectedCallback?.invoke()
         }
@@ -207,7 +207,7 @@ object PeerJSManager {
     @JavascriptInterface
     fun updatePresence(remoteId: String, isOnline: Boolean) {
         val status = if (isOnline) "online" else "offline"
-        Log.d(TAG, "updatePresence from Javascript: $remoteId -> $status")
+        Log.i(TAG, "updatePresence from Javascript: $remoteId -> $status")
         CoroutineScope(Dispatchers.IO).launch {
             repository?.contactDao?.updateOnlineStatus(remoteId, status, System.currentTimeMillis())
         }
@@ -221,13 +221,13 @@ object PeerJSManager {
     }
 
     fun onAppForeground() {
-        Log.d(TAG, "App foregrounded, ensuring signaling connection is active...")
+        Log.i(TAG, "App foregrounded, ensuring signaling connection is active...")
         val firebaseApp = try { com.google.firebase.FirebaseApp.getInstance() } catch(e: Exception) { null }
         val options = firebaseApp?.options
         val apiKey = options?.apiKey ?: ""
         var databaseUrl = options?.databaseUrl ?: ""
         if (databaseUrl.isEmpty()) {
-            databaseUrl = "https://nsgb-gaming-default-rtdb.firebaseio.com"
+            databaseUrl = "https://nsgb-gaming.firebaseio.com"
         }
         val projectId = options?.projectId ?: ""
         Handler(Looper.getMainLooper()).post {
@@ -330,7 +330,7 @@ object PeerJSManager {
 
     @JavascriptInterface
     fun onRoomMatched(remoteId: String, name: String) {
-        Log.d(TAG, "Room matched: $remoteId -> $name")
+        Log.i(TAG, "Room matched: $remoteId -> $name")
         Handler(Looper.getMainLooper()).post {
             onRoomMatched?.invoke(remoteId, name)
         }
