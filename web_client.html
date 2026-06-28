@@ -166,18 +166,41 @@
                 log(`Phone presence updated: ${status}`);
             });
 
-            // Listen for incoming messages
+            // Listen for incoming messages from any sender
             database.ref(`/users/${myId}/messages`).on('child_added', (snap) => {
                 const msg = snap.val();
-                if (msg && msg.from === phoneId) {
+                if (msg && msg.from && msg.from !== myId) {
                     try {
                         const data = JSON.parse(msg.data);
-                        if (data.type === "message") {
-                            addMessageToHistory(data.text, false);
-                            log(`New E2EE Message received from phone.`);
+                        if (data.type === "friend_request") {
+                            log(`Received friend request from ${msg.from} (${data.name}). Auto-saving contact!`);
+                            
+                            // Auto-set the phoneId to the sender's ID
+                            phoneId = msg.from;
+                            document.getElementById('phone-id').value = phoneId;
+                            
+                            // Update UI status and trigger presence listener
+                            document.getElementById('presence-display').innerText = `Phone status: online`;
+                            database.ref(`/status/${phoneId}`).off(); // unsubscribe from previous if any
+                            database.ref(`/status/${phoneId}`).on('value', (s) => {
+                                const st = s.val();
+                                document.getElementById('presence-display').innerText = `Phone status: ${st || 'offline'}`;
+                            });
+                            
+                            // Send a profile response back so the phone gets our name
+                            sendProfileResponse(phoneId);
+                            
+                            // Send mutual friend request back (double handshake)
+                            sendFriendRequest(phoneId);
+                            
                         } else if (data.type === "profile_request") {
-                            log("Received profile name request from phone, sending response...");
+                            log(`Received profile name request from ${msg.from}, sending response...`);
                             sendProfileResponse(msg.from);
+                        } else if (msg.from === phoneId) {
+                            if (data.type === "message") {
+                                addMessageToHistory(data.text, false);
+                                log(`New E2EE Message received from phone.`);
+                            }
                         }
                     } catch(e) {
                         log("Error parsing message payload: " + e);
@@ -365,6 +388,20 @@
                 name: myName
             };
             log(`Sending profile response to ${remoteId}: ${myName}`);
+            database.ref(`/users/${remoteId}/messages`).push({
+                from: myId,
+                data: JSON.stringify(payload),
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
+        }
+
+        function sendFriendRequest(remoteId) {
+            const myName = document.getElementById('my-name').value.trim() || "Laptop Client";
+            const payload = {
+                type: "friend_request",
+                name: myName
+            };
+            log(`Sending mutual friend request to ${remoteId}...`);
             database.ref(`/users/${remoteId}/messages`).push({
                 from: myId,
                 data: JSON.stringify(payload),
