@@ -573,6 +573,9 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
             }
+            
+            // Re-initialize the PeerJS background bridge with the correct generated ID!
+            PeerJSManager.init(getApplication(), repository, generatedId)
         }
     }
 }

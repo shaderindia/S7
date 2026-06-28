@@ -74,8 +74,11 @@ object PeerJSManager {
                     }
                     addJavascriptInterface(this@PeerJSManager, "AndroidBridge")
                 }
+                webView?.loadUrl("file:///android_asset/peerjs_app.html")
+            } else {
+                Log.d(TAG, "Re-initializing existing peer in WebView with new ID: $myId")
+                webView?.evaluateJavascript("initPeer('$myId')", null)
             }
-            webView?.loadUrl("file:///android_asset/peerjs_app.html")
         }
     }
 
