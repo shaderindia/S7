@@ -44,7 +44,7 @@ object PeerJSManager {
         val apiKey = options?.apiKey ?: ""
         var databaseUrl = options?.databaseUrl ?: ""
         if (databaseUrl.isEmpty()) {
-            databaseUrl = "https://nsgb-gaming.firebaseio.com"
+            databaseUrl = "https://nsgb-gaming-default-rtdb.asia-southeast1.firebasedatabase.app"
         }
         val projectId = options?.projectId ?: ""
 
@@ -227,7 +227,7 @@ object PeerJSManager {
         val apiKey = options?.apiKey ?: ""
         var databaseUrl = options?.databaseUrl ?: ""
         if (databaseUrl.isEmpty()) {
-            databaseUrl = "https://nsgb-gaming.firebaseio.com"
+            databaseUrl = "https://nsgb-gaming-default-rtdb.asia-southeast1.firebasedatabase.app"
         }
         val projectId = options?.projectId ?: ""
         Handler(Looper.getMainLooper()).post {
