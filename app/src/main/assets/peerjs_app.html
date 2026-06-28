@@ -798,6 +798,74 @@
                 logToAndroid("Local camera video track status set to: " + isVideoOff);
             }
         }
+
+        function createRoomInWebView(roomId, creatorId, creatorName) {
+            logToAndroid("Creating matching room: " + roomId);
+            const roomRef = database.ref(`/rooms/${roomId}`);
+            roomRef.set({
+                creator: {
+                    id: creatorId,
+                    name: creatorName
+                }
+            });
+            
+            // Listen for joiner
+            roomRef.child("joiner").on('value', (snapshot) => {
+                const joiner = snapshot.val();
+                if (joiner && joiner.id && joiner.name) {
+                    logToAndroid(`Room ${roomId} matched! Creator found joiner: ${joiner.name} (${joiner.id})`);
+                    // Stop listening
+                    roomRef.child("joiner").off();
+                    // Callback to Android
+                    if (window.AndroidBridge) {
+                        window.AndroidBridge.onRoomMatched(joiner.id, joiner.name);
+                    }
+                    // Clean up Firebase lobby path
+                    roomRef.remove();
+                }
+            });
+        }
+
+        function joinRoomInWebView(roomId, joinerId, joinerName) {
+            logToAndroid("Joining matching room: " + roomId);
+            const roomRef = database.ref(`/rooms/${roomId}`);
+            
+            // Check if creator exists, then join
+            roomRef.child("creator").once('value').then((snapshot) => {
+                const creator = snapshot.val();
+                if (creator && creator.id && creator.name) {
+                    logToAndroid(`Room ${roomId} matched! Joiner found creator: ${creator.name} (${creator.id})`);
+                    
+                    // Write our joiner info to trigger creator
+                    roomRef.child("joiner").set({
+                        id: joinerId,
+                        name: joinerName
+                    }).then(() => {
+                        // Callback to Android
+                        if (window.AndroidBridge) {
+                            window.AndroidBridge.onRoomMatched(creator.id, creator.name);
+                        }
+                    });
+                } else {
+                    logToAndroid(`Room ${roomId} not found or has no creator.`);
+                    if (window.AndroidBridge) {
+                        window.AndroidBridge.onError("room-not-found");
+                    }
+                }
+            }).catch((err) => {
+                logToAndroid("Error joining room: " + err);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onError("room-join-error");
+                }
+            });
+        }
+
+        function cancelRoomMatchingInWebView(roomId) {
+            logToAndroid("Canceling matching for room: " + roomId);
+            const roomRef = database.ref(`/rooms/${roomId}`);
+            roomRef.child("joiner").off();
+            roomRef.remove();
+        }
     </script>
 </body>
 </html>

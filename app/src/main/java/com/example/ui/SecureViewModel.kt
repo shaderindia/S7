@@ -99,6 +99,49 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
     private val _fetchedProfiles = MutableStateFlow<Map<String, String>>(emptyMap())
     val fetchedProfiles: StateFlow<Map<String, String>> = _fetchedProfiles.asStateFlow()
 
+    val activeRoomId = MutableStateFlow<String?>(null)
+    val roomStatus = MutableStateFlow<String>("idle") // "idle", "waiting", "joining", "matched", "error"
+
+    fun startCreateRoom() {
+        viewModelScope.launch {
+            val myProfileObj = repository.getMyProfileDirect()
+            val myName = myProfileObj?.name ?: "Security Agent"
+            val myIdVal = myProfileObj?.mySecureId ?: "SEC-814-297-ZPH"
+            
+            // Generate a random 6-digit room code
+            val code = (100000..999999).random().toString()
+            activeRoomId.value = code
+            roomStatus.value = "waiting"
+            
+            PeerJSManager.createRoom(code, myIdVal, myName)
+        }
+    }
+
+    fun startJoinRoom(roomIdInput: String) {
+        val cleanRoomId = roomIdInput.trim()
+        if (cleanRoomId.length < 5) return
+        
+        viewModelScope.launch {
+            val myProfileObj = repository.getMyProfileDirect()
+            val myName = myProfileObj?.name ?: "Security Agent"
+            val myIdVal = myProfileObj?.mySecureId ?: "SEC-814-297-ZPH"
+            
+            activeRoomId.value = cleanRoomId
+            roomStatus.value = "joining"
+            
+            PeerJSManager.joinRoom(cleanRoomId, myIdVal, myName)
+        }
+    }
+
+    fun cancelMatching() {
+        val currentRoom = activeRoomId.value
+        if (currentRoom != null) {
+            PeerJSManager.cancelRoom(currentRoom)
+        }
+        activeRoomId.value = null
+        roomStatus.value = "idle"
+    }
+
     suspend fun getLocalContactName(id: String): String? {
         val cleanId = id.trim().uppercase()
         val finalId = if (!cleanId.startsWith("SEC-")) "SEC-$cleanId" else cleanId
@@ -220,6 +263,26 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
 
             PeerJSManager.onProfileFetched = { id, name ->
                 updateFetchedProfile(id, name)
+            }
+
+            PeerJSManager.onRoomMatched = { remoteId, remoteName ->
+                viewModelScope.launch {
+                    repository.insertContact(
+                        Contact(
+                            id = remoteId,
+                            name = remoteName,
+                            profilePicUrl = "https://picsum.photos/id/1025/150/150",
+                            onlineStatus = "online"
+                        )
+                    )
+                    roomStatus.value = "matched"
+                    activeRoomId.value = null
+                    
+                    val addedContact = repository.contactDao.getContactById(remoteId)
+                    if (addedContact != null) {
+                        selectContact(addedContact)
+                    }
+                }
             }
 
             // Periodic background presence ping loop

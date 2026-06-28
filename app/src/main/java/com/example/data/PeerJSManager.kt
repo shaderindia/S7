@@ -30,6 +30,7 @@ object PeerJSManager {
     var onErrorCallback: ((String) -> Unit)? = null
     var onLogCallback: ((String) -> Unit)? = null
     var onProfileFetched: ((String, String) -> Unit)? = null
+    var onRoomMatched: ((String, String) -> Unit)? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     fun init(ctx: Context, repo: SecureRepository, peerId: String) {
@@ -296,6 +297,32 @@ object PeerJSManager {
     fun setVideoRotations(remoteRot: Int, localRot: Int) {
         Handler(Looper.getMainLooper()).post {
             webView?.evaluateJavascript("setVideoRotations($remoteRot, $localRot)", null)
+        }
+    }
+
+    @JavascriptInterface
+    fun onRoomMatched(remoteId: String, name: String) {
+        Log.d(TAG, "Room matched: $remoteId -> $name")
+        Handler(Looper.getMainLooper()).post {
+            onRoomMatched?.invoke(remoteId, name)
+        }
+    }
+
+    fun createRoom(roomId: String, myId: String, name: String) {
+        Handler(Looper.getMainLooper()).post {
+            webView?.evaluateJavascript("createRoomInWebView('$roomId', '$myId', '$name')", null)
+        }
+    }
+
+    fun joinRoom(roomId: String, myId: String, name: String) {
+        Handler(Looper.getMainLooper()).post {
+            webView?.evaluateJavascript("joinRoomInWebView('$roomId', '$myId', '$name')", null)
+        }
+    }
+
+    fun cancelRoom(roomId: String) {
+        Handler(Looper.getMainLooper()).post {
+            webView?.evaluateJavascript("cancelRoomMatchingInWebView('$roomId')", null)
         }
     }
 }

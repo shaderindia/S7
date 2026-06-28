@@ -60,6 +60,8 @@ fun SecureDashboardScreen(
     val localVideoRotation by viewModel.localVideoRotation.collectAsState()
     val p2pLogs by viewModel.p2pLogs.collectAsState()
     val fetchedProfiles by viewModel.fetchedProfiles.collectAsState()
+    val activeRoomId by viewModel.activeRoomId.collectAsState()
+    val roomStatus by viewModel.roomStatus.collectAsState()
 
     val context = LocalContext.current
     var showAddFriendDialog by remember { mutableStateOf(false) }
@@ -382,49 +384,40 @@ fun SecureDashboardScreen(
         }
 
         if (showAddFriendDialog) {
-            var friendIdInput by remember { mutableStateOf("") }
-            var friendNameInput by remember { mutableStateOf("") }
-            var idError by remember { mutableStateOf(false) }
-
-            // Auto-fetch name locally or request via P2P
-            LaunchedEffect(friendIdInput) {
-                val clean = friendIdInput.trim().uppercase()
-                val finalId = if (!clean.startsWith("SEC-")) "SEC-$clean" else clean
-                if (clean.length >= 5) {
-                    val localName = viewModel.getLocalContactName(finalId)
-                    if (localName != null) {
-                        friendNameInput = localName
-                    } else {
-                        viewModel.requestProfile(finalId)
-                    }
-                }
-            }
-
-            // Observe P2P profile fetches
-            val cleanId = friendIdInput.trim().uppercase()
-            val finalId = if (!cleanId.startsWith("SEC-")) "SEC-$cleanId" else cleanId
-            val p2pFetchedName = fetchedProfiles[finalId]
-            LaunchedEffect(p2pFetchedName) {
-                if (!p2pFetchedName.isNullOrBlank()) {
-                    friendNameInput = p2pFetchedName
+            var matchingMode by remember { mutableStateOf("choice") } // "choice", "create", "join"
+            var joinRoomIdInput by remember { mutableStateOf("") }
+            
+            // If successfully matched, close the dialog
+            LaunchedEffect(roomStatus) {
+                if (roomStatus == "matched") {
+                    showAddFriendDialog = false
+                    matchingMode = "choice"
                 }
             }
 
             AlertDialog(
-                onDismissRequest = { showAddFriendDialog = false },
+                onDismissRequest = { 
+                    viewModel.cancelMatching()
+                    showAddFriendDialog = false 
+                    matchingMode = "choice"
+                },
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.PersonAdd,
+                            imageVector = Icons.Filled.GroupAdd,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = "Establish Secure Tunnel",
+                            text = when(matchingMode) {
+                                "create" -> "Room Created"
+                                "join" -> "Join Room"
+                                else -> "Secure Matchmaker"
+                            },
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onSurface
@@ -436,82 +429,144 @@ fun SecureDashboardScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = "Connect with a peer using their special Secure ID to start an end-to-end encrypted chat.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        OutlinedTextField(
-                            value = friendIdInput,
-                            onValueChange = {
-                                friendIdInput = it
-                                val clean = it.trim().uppercase()
-                                val hasSec = clean.startsWith("SEC-")
-                                val ipPart = if (hasSec) clean.substring(4) else clean
-                                val isIp = ipPart.matches(Regex("""\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"""))
-                                idError = it.isNotBlank() && !hasSec && !isIp
-                            },
-                            label = { Text("Friend's S7 Secure ID or Local IP") },
-                            placeholder = { Text("e.g. SEC-192.168.1.15 or 192.168.1.15") },
-                            isError = idError,
-                            supportingText = {
-                                if (idError) {
-                                    Text("Must be a valid S7 Secure ID (SEC-...) or Local IP Address", color = MaterialTheme.colorScheme.error)
-                                } else {
-                                    Text("Example: SEC-192.168.1.15 or 192.168.1.15", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        when (matchingMode) {
+                            "choice" -> {
+                                Text(
+                                    text = "Match securely with a friend using a temporary Room ID. One person creates a room, and the other joins it.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { 
+                                        matchingMode = "create"
+                                        viewModel.startCreateRoom()
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Create Room", fontWeight = FontWeight.Bold)
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                            singleLine = true
-                        )
-
-                        OutlinedTextField(
-                            value = friendNameInput,
-                            onValueChange = { friendNameInput = it },
-                            label = { Text("Friend's Name") },
-                            placeholder = { Text("e.g. Sarah Miller") },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp),
-                            singleLine = true
-                        )
-
-
-
-                        // Removed pending requests section as friends are added directly
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedButton(
+                                    onClick = { matchingMode = "join" },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Join Existing Room", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            "create" -> {
+                                Text(
+                                    text = "Share this 6-digit Room ID with your friend. When they join, your chat session will automatically activate.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Large Room Code Display
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                                    border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = activeRoomId ?: "......",
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 32.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            letterSpacing = 2.sp
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                                        TextButton(
+                                            onClick = {
+                                                activeRoomId?.let { code ->
+                                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(code))
+                                                    Toast.makeText(context, "Room Code copied!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Copy Code", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Waiting for friend to join...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            "join" -> {
+                                Text(
+                                    text = "Enter the 6-digit Room ID shared by your friend to automatically connect and sync profiles.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = joinRoomIdInput,
+                                    onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) joinRoomIdInput = it },
+                                    label = { Text("6-Digit Room ID") },
+                                    placeholder = { Text("e.g. 482915") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true
+                                )
+                                
+                                if (roomStatus == "joining") {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Connecting to room...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
                     }
                 },
                 confirmButton = {
-                    Button(
-                        onClick = {
-                            if (friendIdInput.isNotBlank() && friendNameInput.isNotBlank()) {
-                                val success = viewModel.addNewContact(friendIdInput, friendNameInput)
-                                if (success) {
-                                    Toast.makeText(context, "Secure Contact Added!", Toast.LENGTH_SHORT).show()
-                                    showAddFriendDialog = false
+                    if (matchingMode == "join") {
+                        Button(
+                            onClick = {
+                                if (joinRoomIdInput.length == 6) {
+                                    viewModel.startJoinRoom(joinRoomIdInput)
                                 } else {
-                                    idError = true
-                                    Toast.makeText(context, "Invalid secure ID format. Use SEC-XXX...", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, "Enter a valid 6-digit Room ID.", Toast.LENGTH_SHORT).show()
                                 }
-                            } else {
-                                Toast.makeText(context, "Please enter both ID and Name.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Establish Tunnel", fontWeight = FontWeight.Bold)
+                            },
+                            enabled = roomStatus != "joining",
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Join Room", fontWeight = FontWeight.Bold)
+                        }
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showAddFriendDialog = false }) {
-                        Text("Cancel")
+                    TextButton(
+                        onClick = {
+                            viewModel.cancelMatching()
+                            showAddFriendDialog = false
+                            matchingMode = "choice"
+                        }
+                    ) {
+                        Text(if (matchingMode == "choice") "Close" else "Cancel")
                     }
                 },
                 shape = RoundedCornerShape(24.dp),
-                containerColor = MaterialTheme.colorScheme.surface
             )
         }
     }

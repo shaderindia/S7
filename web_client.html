@@ -39,10 +39,26 @@
             <label>2. Your Secure ID (Laptop):</label>
             <input type="text" id="my-id" value="SEC-LAPTOP-DEV">
             
-            <label>3. Your Phone's Secure ID:</label>
-            <input type="text" id="phone-id" placeholder="Copy from Phone App (e.g. SEC-XXX...)">
+            <hr style="border: 0; border-top: 1px solid #2d2d44; margin: 15px 0;">
             
-            <button onclick="goOnline()">Go Online & Connect</button>
+            <div id="choice-buttons">
+                <button onclick="startCreateRoom()" style="background: #16a34a;">Create Room</button>
+                <button onclick="showJoinPanel()" style="background: #4f46e5; margin-top: 10px;">Join Room</button>
+            </div>
+            
+            <div id="create-panel" style="display:none; text-align:center;">
+                <label>Share this Room ID with your friend:</label>
+                <div id="room-id-display" style="font-size: 2.2em; font-weight: bold; color: #a5b4fc; margin: 15px 0; font-family: monospace; letter-spacing: 2px;">......</div>
+                <div style="font-size: 0.9em; color: #9ca3af; margin-bottom: 15px;">Waiting for friend to join...</div>
+                <button onclick="cancelMatching()" style="background: #dc2626;">Cancel</button>
+            </div>
+            
+            <div id="join-panel" style="display:none;">
+                <label>Enter 6-digit Room ID:</label>
+                <input type="text" id="join-room-id" placeholder="e.g. 482915" maxlength="6">
+                <button onclick="startJoinRoom()" style="background: #16a34a;">Join Room</button>
+                <button onclick="showChoiceButtons()" style="background: #4b5563; margin-top: 10px;">Back</button>
+            </div>
         </div>
 
         <div id="main-view" style="display:none;">
@@ -122,29 +138,123 @@
             return btoa(plainText);
         }
 
-        function goOnline() {
+        let activeRoomId = "";
+
+        function showJoinPanel() {
+            document.getElementById('choice-buttons').style.display = 'none';
+            document.getElementById('join-panel').style.display = 'block';
+        }
+
+        function showChoiceButtons() {
+            document.getElementById('choice-buttons').style.display = 'block';
+            document.getElementById('join-panel').style.display = 'none';
+            document.getElementById('create-panel').style.display = 'none';
+        }
+
+        function initFirebase() {
+            if (!database) {
+                log("Connecting to Firebase...");
+                firebase.initializeApp(firebaseConfig);
+                database = firebase.database();
+                
+                // Override database.ref to replace dots with underscores in Firebase paths
+                const originalRef = database.ref;
+                database.ref = function(path) {
+                    if (path) {
+                        const sanitizedPath = path.replace(/\./g, '_');
+                        return originalRef.call(database, sanitizedPath);
+                    }
+                    return originalRef.call(database);
+                };
+            }
+        }
+
+        function startCreateRoom() {
             myId = document.getElementById('my-id').value.trim().toUpperCase();
-            phoneId = document.getElementById('phone-id').value.trim().toUpperCase();
-            
-            if(!myId || !phoneId) {
-                alert("Please fill in all IDs!");
+            const myName = document.getElementById('my-name').value.trim() || "Laptop Client";
+            if (!myId) {
+                alert("Please fill in your ID!");
                 return;
             }
-
-            log("Connecting to Firebase...");
-            firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-
-            // Override database.ref to replace dots with underscores in Firebase paths
-            const originalRef = database.ref;
-            database.ref = function(path) {
-                if (path) {
-                    const sanitizedPath = path.replace(/\./g, '_');
-                    return originalRef.call(database, sanitizedPath);
+            
+            initFirebase();
+            
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            activeRoomId = code;
+            
+            document.getElementById('room-id-display').innerText = code;
+            document.getElementById('choice-buttons').style.display = 'none';
+            document.getElementById('create-panel').style.display = 'block';
+            
+            log(`Creating matching room: ${code}`);
+            
+            const roomRef = database.ref(`/rooms/${code}`);
+            roomRef.set({
+                creator: {
+                    id: myId,
+                    name: myName
                 }
-                return originalRef.call(database);
-            };
+            });
+            
+            // Listen for joiner
+            roomRef.child("joiner").on('value', (snap) => {
+                const joiner = snap.val();
+                if (joiner && joiner.id && joiner.name) {
+                    log(`Matched! Found joiner: ${joiner.name} (${joiner.id})`);
+                    roomRef.child("joiner").off();
+                    
+                    phoneId = joiner.id;
+                    roomRef.remove(); // Clean up path
+                    
+                    onMatchingSuccess();
+                }
+            });
+        }
 
+        function startJoinRoom() {
+            myId = document.getElementById('my-id').value.trim().toUpperCase();
+            const myName = document.getElementById('my-name').value.trim() || "Laptop Client";
+            const code = document.getElementById('join-room-id').value.trim();
+            
+            if (!myId || !code) {
+                alert("Please fill in your ID and Room ID!");
+                return;
+            }
+            
+            initFirebase();
+            
+            log(`Attempting to join room: ${code}`);
+            const roomRef = database.ref(`/rooms/${code}`);
+            
+            roomRef.child("creator").once('value').then((snap) => {
+                const creator = snap.val();
+                if (creator && creator.id && creator.name) {
+                    log(`Matched! Found creator: ${creator.name} (${creator.id})`);
+                    phoneId = creator.id;
+                    
+                    roomRef.child("joiner").set({
+                        id: myId,
+                        name: myName
+                    }).then(() => {
+                        onMatchingSuccess();
+                    });
+                } else {
+                    log(`Room ${code} not found or expired.`);
+                    alert(`Room ${code} not found or expired.`);
+                }
+            });
+        }
+
+        function cancelMatching() {
+            if (database && activeRoomId) {
+                database.ref(`/rooms/${activeRoomId}`).off();
+                database.ref(`/rooms/${activeRoomId}`).remove();
+            }
+            activeRoomId = "";
+            showChoiceButtons();
+        }
+
+        function onMatchingSuccess() {
             // Set presence online
             const statusRef = database.ref(`/status/${myId}`);
             statusRef.set("online");
@@ -175,22 +285,16 @@
                         if (data.type === "friend_request") {
                             log(`Received friend request from ${msg.from} (${data.name}). Auto-saving contact!`);
                             
-                            // Auto-set the phoneId to the sender's ID
                             phoneId = msg.from;
-                            document.getElementById('phone-id').value = phoneId;
                             
-                            // Update UI status and trigger presence listener
                             document.getElementById('presence-display').innerText = `Phone status: online`;
-                            database.ref(`/status/${phoneId}`).off(); // unsubscribe from previous if any
+                            database.ref(`/status/${phoneId}`).off();
                             database.ref(`/status/${phoneId}`).on('value', (s) => {
                                 const st = s.val();
                                 document.getElementById('presence-display').innerText = `Phone status: ${st || 'offline'}`;
                             });
                             
-                            // Send a profile response back so the phone gets our name
                             sendProfileResponse(phoneId);
-                            
-                            // Send mutual friend request back (double handshake)
                             sendFriendRequest(phoneId);
                             
                         } else if (data.type === "profile_request") {
@@ -205,7 +309,7 @@
                     } catch(e) {
                         log("Error parsing message payload: " + e);
                     }
-                    snap.ref.remove(); // delete from signaling queue
+                    snap.ref.remove();
                 }
             });
 
