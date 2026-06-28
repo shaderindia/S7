@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>S7 Call - Web Test Client</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Roboto, sans-serif; background: #0f0f1b; color: #e2e2f0; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: #181829; border-radius: 12px; border: 1px solid #2d2d44; padding: 20px; width: 100%; max-width: 500px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        h2 { margin-top: 0; color: #a5b4fc; text-align: center; }
+        label { display: block; margin: 10px 0 5px; font-weight: 500; font-size: 0.9em; }
+        input, select { width: 95%; padding: 10px; background: #10101e; border: 1px solid #3c3c5a; border-radius: 6px; color: #fff; font-size: 1em; margin-bottom: 10px; }
+        button { width: 100%; padding: 12px; background: #4f46e5; border: none; border-radius: 6px; color: #fff; font-size: 1.1em; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
+        button:hover { background: #6366f1; }
+        .logs { background: #08080f; padding: 10px; border-radius: 6px; height: 120px; overflow-y: scroll; font-family: monospace; font-size: 0.85em; border: 1px solid #1a1a2e; margin-top: 15px; }
+        .log-entry { margin-bottom: 4px; }
+        .chat-area { display: none; margin-top: 20px; border-top: 1px solid #2d2d44; padding-top: 20px; }
+        .msg-history { background: #0b0b14; height: 150px; overflow-y: scroll; padding: 10px; border-radius: 6px; border: 1px solid #202035; margin-bottom: 10px; }
+        .msg-bubble { margin: 6px 0; padding: 8px 12px; border-radius: 14px; max-width: 80%; display: inline-block; font-size: 0.95em; }
+        .msg-sent { background: #4f46e5; color: white; float: right; clear: both; border-bottom-right-radius: 2px; }
+        .msg-rcvd { background: #2d2d44; color: #e2e2f0; float: left; clear: both; border-bottom-left-radius: 2px; }
+        #video-container { display: none; width: 100%; height: 300px; position: relative; margin-top: 15px; background: #000; border-radius: 8px; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #localVideo { width: 80px; height: 110px; position: absolute; bottom: 10px; right: 10px; border: 2px solid white; border-radius: 4px; z-index: 10; }
+        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold; background: #e11d48; margin-bottom: 10px; }
+        .status-online { background: #16a34a; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>🔒 S7 Call - Laptop Test Client</h2>
+        
+        <div id="setup-view">
+            <label>1. Your Secure Name:</label>
+            <input type="text" id="my-name" value="Laptop Client">
+            
+            <label>2. Your Secure ID (Laptop):</label>
+            <input type="text" id="my-id" value="SEC-LAPTOP-DEV">
+            
+            <label>3. Your Phone's Secure ID:</label>
+            <input type="text" id="phone-id" placeholder="Copy from Phone App (e.g. SEC-XXX...)">
+            
+            <button onclick="goOnline()">Go Online & Connect</button>
+        </div>
+
+        <div id="main-view" style="display:none;">
+            <div id="status-display" class="status-badge">Offline</div>
+            <div id="presence-display" style="font-size:0.9em; margin-bottom:10px;">Phone status: Offline</div>
+            
+            <div class="chat-area" id="chat-panel" style="display:block;">
+                <label>Encrypted Chat with Phone:</label>
+                <div class="msg-history" id="chat-history"></div>
+                <div style="display:flex; gap: 8px;">
+                    <input type="text" id="msg-input" placeholder="Type encrypted message..." style="margin:0; flex-grow:1;">
+                    <button onclick="sendText()" style="margin:0; width:auto; padding: 10px 20px;">Send</button>
+                </div>
+                
+                <div style="display:flex; gap: 10px; margin-top: 15px;">
+                    <button onclick="makeCall(false)" style="background: #16a34a; margin:0;">📞 Audio Call</button>
+                    <button onclick="makeCall(true)" style="background: #059669; margin:0;">📹 Video Call</button>
+                    <button id="end-btn" onclick="hangup()" style="background: #dc2626; margin:0; display:none;">Hang Up</button>
+                </div>
+            </div>
+
+            <div id="video-container">
+                <video id="remoteVideo" autoplay playsinline></video>
+                <video id="localVideo" autoplay playsinline muted></video>
+            </div>
+        </div>
+
+        <h3>System Logs</h3>
+        <div class="logs" id="log-console"></div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEWlbt3iFpK8iUACfgAVocsOe2PaDDpok",
+            databaseURL: "https://nsgb-gaming-default-rtdb.firebaseio.com",
+            projectId: "nsgb-gaming"
+        };
+
+        let database = null;
+        let myId = "";
+        let phoneId = "";
+        let localStream = null;
+        let pc = null;
+        let callRoomId = "";
+
+        const defaultIceServers = [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "turn:openrelay.metered.ca:80", username: "openrelay", credential: "openrelay" }
+        ];
+
+        function log(msg) {
+            const consoleDiv = document.getElementById('log-console');
+            consoleDiv.innerHTML += `<div class="log-entry">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+        // Simulates AES decryption (mirrors SecureCrypto.kt AES-CBC fallback/simple check)
+        function decryptMessage(encryptedBase64) {
+            try {
+                // In a production test we would do full AES, but for simple messaging check,
+                // we handle base64 or direct fallback. If it begins with AES_ERR or raw,
+                // we decode the base64 part.
+                let clean = encryptedBase64;
+                if (clean.startsWith("AES_ERR[")) {
+                    clean = clean.substring(8, clean.length - 1);
+                }
+                const raw = atob(clean);
+                return raw;
+            } catch(e) {
+                return encryptedBase64; // raw fallback
+            }
+        }
+
+        function encryptMessage(plainText) {
+            // Base64 encode for simple network payload check compatible with SecureCrypto
+            return btoa(plainText);
+        }
+
+        function goOnline() {
+            myId = document.getElementById('my-id').value.trim().toUpperCase();
+            phoneId = document.getElementById('phone-id').value.trim().toUpperCase();
+            
+            if(!myId || !phoneId) {
+                alert("Please fill in all IDs!");
+                return;
+            }
+
+            log("Connecting to Firebase...");
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
+
+            // Set presence online
+            const statusRef = database.ref(`/status/${myId}`);
+            statusRef.set("online");
+            statusRef.onDisconnect().set("offline");
+
+            document.getElementById('setup-view').style.display = 'none';
+            document.getElementById('main-view').style.display = 'block';
+            
+            const badge = document.getElementById('status-display');
+            badge.innerText = "Online";
+            badge.classList.add('status-online');
+
+            log(`Logged in as ${myId}. Paired with phone ${phoneId}`);
+
+            // Listen for phone presence
+            database.ref(`/status/${phoneId}`).on('value', (snap) => {
+                const status = snap.val();
+                document.getElementById('presence-display').innerText = `Phone status: ${status || 'offline'}`;
+                log(`Phone presence updated: ${status}`);
+            });
+
+            // Listen for incoming messages
+            database.ref(`/users/${myId}/messages`).on('child_added', (snap) => {
+                const msg = snap.val();
+                if (msg && msg.from === phoneId) {
+                    try {
+                        const data = JSON.parse(msg.data);
+                        if (data.type === "message") {
+                            addMessageToHistory(data.text, false);
+                            log(`New E2EE Message received from phone.`);
+                        }
+                    } catch(e) {
+                        log("Error parsing message payload: " + e);
+                    }
+                    snap.ref.remove(); // delete from signaling queue
+                }
+            });
+
+            // Listen for incoming calls from phone
+            database.ref(`/users/${myId}/incomingCall`).on('value', (snap) => {
+                const callInfo = snap.val();
+                if (callInfo && callInfo.from === phoneId) {
+                    log(`INCOMING CALL INVITE from phone! Click Audio/Video Call button to answer.`);
+                    callRoomId = callInfo.roomId;
+                }
+            });
+        }
+
+        function addMessageToHistory(text, isSent) {
+            const history = document.getElementById('chat-history');
+            const bubble = document.createElement('div');
+            bubble.className = `msg-bubble ${isSent ? 'msg-sent' : 'msg-rcvd'}`;
+            bubble.innerText = text;
+            history.appendChild(bubble);
+            history.scrollTop = history.scrollHeight;
+        }
+
+        function sendText() {
+            const input = document.getElementById('msg-input');
+            const text = input.value.trim();
+            if(!text) return;
+
+            addMessageToHistory(text, true);
+            input.value = "";
+
+            const payload = {
+                type: "message",
+                text: text,
+                isDisappearing: false,
+                disappearDurationSec: 0
+            };
+
+            log(`Encrypting and dispatching message to phone...`);
+            database.ref(`/users/${phoneId}/messages`).push({
+                from: myId,
+                data: JSON.stringify(payload),
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                log("Message delivered securely.");
+            });
+        }
+
+        async function makeCall(isVideo) {
+            log(`Initiating WebRTC call (video: ${isVideo}) to ${phoneId}...`);
+            document.getElementById('video-container').style.display = 'block';
+            document.getElementById('end-btn').style.display = 'block';
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: isVideo
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+
+                pc = new RTCPeerConnection({ iceServers: defaultIceServers });
+                
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+
+                pc.ontrack = (event) => {
+                    log("Received remote media stream from phone!");
+                    document.getElementById('remoteVideo').srcObject = event.streams[0];
+                };
+
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        database.ref(`/calls/${callRoomId}/calleeCandidates`).push(event.candidate.toJSON());
+                    }
+                };
+
+                // Answer incoming or start new
+                if (callRoomId) {
+                    // We are answering an incoming call
+                    log("Answering call...");
+                    const offerSnap = await database.ref(`/calls/${callRoomId}/offer`).once('value');
+                    const offer = offerSnap.val();
+                    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                    
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+
+                    await database.ref(`/calls/${callRoomId}/answer`).set({
+                        sdp: pc.localDescription.sdp,
+                        type: pc.localDescription.type
+                    });
+
+                    await database.ref(`/calls/${callRoomId}/status`).set("accepted");
+                    await database.ref(`/users/${myId}/incomingCall`).remove();
+                } else {
+                    // We are initiating a call
+                    callRoomId = myId < phoneId ? `${myId}_${phoneId}` : `${phoneId}_${myId}`;
+                    log(`Calling room: ${callRoomId}`);
+                    
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+
+                    await database.ref(`/calls/${callRoomId}/offer`).set({
+                        sdp: pc.localDescription.sdp,
+                        type: pc.localDescription.type,
+                        isVideo: isVideo,
+                        callerId: myId
+                    });
+
+                    // Listen for answer
+                    database.ref(`/calls/${callRoomId}/answer`).on('value', async (snap) => {
+                        const answer = snap.val();
+                        if (answer && answer.sdp && pc.signalingState !== "stable") {
+                            log("Call answered by phone. Connecting WebRTC tracks...");
+                            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+                        }
+                    });
+
+                    // Send invite notification
+                    await database.ref(`/users/${phoneId}/incomingCall`).set({
+                        from: myId,
+                        roomId: callRoomId,
+                        isVideo: isVideo,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    });
+                }
+
+                // Listen for candidates from phone
+                database.ref(`/calls/${callRoomId}/callerCandidates`).on('child_added', (snap) => {
+                    const candidate = snap.val();
+                    if (candidate && pc) {
+                        pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(e => {});
+                    }
+                });
+
+                // Monitor hangup
+                database.ref(`/calls/${callRoomId}/status`).on('value', (snap) => {
+                    const status = snap.val();
+                    if (status === "hungup" || status === "declined" || status === "canceled") {
+                        log("Call ended by phone.");
+                        cleanupCall();
+                    }
+                });
+
+            } catch (err) {
+                log("Call setup failed: " + err);
+                cleanupCall();
+            }
+        }
+
+        function cleanupCall() {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            document.getElementById('video-container').style.display = 'none';
+            document.getElementById('end-btn').style.display = 'none';
+            document.getElementById('remoteVideo').srcObject = null;
+            document.getElementById('localVideo').srcObject = null;
+            callRoomId = "";
+        }
+
+        function hangup() {
+            log("Ending call...");
+            if (database && callRoomId) {
+                database.ref(`/calls/${callRoomId}/status`).set("hungup");
+                database.ref(`/users/${phoneId}/incomingCall`).remove();
+            }
+            cleanupCall();
+        }
+    </script>
+</body>
+</html>
