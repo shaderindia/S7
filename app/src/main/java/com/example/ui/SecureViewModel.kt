@@ -107,28 +107,43 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
             val myProfileObj = repository.getMyProfileDirect()
             val myName = myProfileObj?.name ?: "Security Agent"
             val myIdVal = myProfileObj?.mySecureId ?: "SEC-814-297-ZPH"
-            
-            // Generate a random 6-digit room code
+
             val code = (100000..999999).random().toString()
             activeRoomId.value = code
             roomStatus.value = "waiting"
-            
+
             PeerJSManager.createRoom(code, myIdVal, myName)
+
+            // Creator joins immediately — insert a placeholder contact and open chat
+            val placeholderId = "ROOM_WAITING_$code"
+            repository.insertContact(
+                Contact(
+                    id = placeholderId,
+                    name = "Waiting for friend...",
+                    profilePicUrl = "https://picsum.photos/id/1025/150/150",
+                    onlineStatus = "online"
+                )
+            )
+            // Open the chat right away so creator is "in the room"
+            roomStatus.value = "matched"
+            activeRoomId.value = null
+            val placeholder = repository.contactDao.getContactById(placeholderId)
+            if (placeholder != null) selectContact(placeholder)
         }
     }
 
     fun startJoinRoom(roomIdInput: String) {
         val cleanRoomId = roomIdInput.trim()
         if (cleanRoomId.length < 5) return
-        
+
         viewModelScope.launch {
             val myProfileObj = repository.getMyProfileDirect()
             val myName = myProfileObj?.name ?: "Security Agent"
             val myIdVal = myProfileObj?.mySecureId ?: "SEC-814-297-ZPH"
-            
+
             activeRoomId.value = cleanRoomId
             roomStatus.value = "joining"
-            
+
             PeerJSManager.joinRoom(cleanRoomId, myIdVal, myName)
         }
     }
@@ -273,6 +288,12 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
 
             PeerJSManager.onRoomMatched = { remoteId, remoteName ->
                 viewModelScope.launch {
+                    // Remove any placeholder "waiting" contact from creator side
+                    val currentContact = _activeContact.value
+                    if (currentContact != null && currentContact.id.startsWith("ROOM_WAITING_")) {
+                        repository.contactDao.deleteContact(currentContact)
+                    }
+
                     repository.insertContact(
                         Contact(
                             id = remoteId,
@@ -283,7 +304,7 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     )
                     roomStatus.value = "matched"
                     activeRoomId.value = null
-                    
+
                     val addedContact = repository.contactDao.getContactById(remoteId)
                     if (addedContact != null) {
                         selectContact(addedContact)
