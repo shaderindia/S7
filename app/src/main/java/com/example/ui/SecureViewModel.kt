@@ -328,6 +328,9 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     activeRoomId.value = null
                     pendingRoomCode.value = null
 
+                    // ponytail: ping immediately to initialize presence and connect WebRTC channels instantly
+                    PeerJSManager.pingContacts(listOf(remoteId))
+
                     val addedContact = repository.contactDao.getContactById(remoteId)
                     if (addedContact != null) {
                         selectContact(addedContact)

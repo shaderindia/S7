@@ -197,7 +197,7 @@
                         }
 
                         // Listen for remote cancellation
-                        database.ref(`/calls/${incoming.roomId}/status`).on('value', (statusSnap) => {
+                        database.ref(`/users/CALL_${incoming.roomId}/status`).on('value', (statusSnap) => {
                             const status = statusSnap.val();
                             if (status === "canceled") {
                                 logToAndroid("Incoming call canceled by caller.");
@@ -594,7 +594,7 @@
 
                 pc.onicecandidate = (event) => {
                     if (event.candidate) {
-                        database.ref(`/calls/${roomId}/callerCandidates`).push(event.candidate.toJSON());
+                        database.ref(`/users/CALL_${roomId}/callerCandidates`).push(event.candidate.toJSON());
                     }
                 };
 
@@ -602,7 +602,7 @@
                 await pc.setLocalDescription(offer);
 
                 // Publish Call Details
-                await database.ref(`/calls/${roomId}/offer`).set({
+                await database.ref(`/users/CALL_${roomId}/offer`).set({
                     sdp: pc.localDescription.sdp,
                     type: pc.localDescription.type,
                     isVideo: isVideo,
@@ -610,7 +610,7 @@
                 });
 
                 // Listen for Callee Answer SDP
-                database.ref(`/calls/${roomId}/answer`).on('value', async (snapshot) => {
+                database.ref(`/users/CALL_${roomId}/answer`).on('value', async (snapshot) => {
                     const answer = snapshot.val();
                     if (answer && answer.sdp && pc.signalingState !== "stable") {
                         logToAndroid("Setting media call SDP Answer on caller");
@@ -620,7 +620,7 @@
                 });
 
                 // Queue and apply remote Callee candidate ICE items
-                database.ref(`/calls/${roomId}/calleeCandidates`).on('child_added', (snapshot) => {
+                database.ref(`/users/CALL_${roomId}/calleeCandidates`).on('child_added', (snapshot) => {
                     const candidate = snapshot.val();
                     if (candidate) {
                         if (pc.remoteDescription) {
@@ -633,7 +633,7 @@
                 });
 
                 // Monitor call status controls
-                database.ref(`/calls/${roomId}/status`).on('value', (snapshot) => {
+                database.ref(`/users/CALL_${roomId}/status`).on('value', (snapshot) => {
                     const status = snapshot.val();
                     if (status) {
                         logToAndroid("Call status updated to: " + status);
@@ -694,12 +694,12 @@
 
                 pc.onicecandidate = (event) => {
                     if (event.candidate) {
-                        database.ref(`/calls/${roomId}/calleeCandidates`).push(event.candidate.toJSON());
+                        database.ref(`/users/CALL_${roomId}/calleeCandidates`).push(event.candidate.toJSON());
                     }
                 };
 
                 // Read SDP Offer from Room
-                const offerSnap = await database.ref(`/calls/${roomId}/offer`).once('value');
+                const offerSnap = await database.ref(`/users/CALL_${roomId}/offer`).once('value');
                 const offer = offerSnap.val();
                 if (!offer) {
                     throw new Error("Outbound caller offer not found!");
@@ -712,13 +712,13 @@
                 await pc.setLocalDescription(answer);
 
                 // Publish Call Answer SDP
-                await database.ref(`/calls/${roomId}/answer`).set({
+                await database.ref(`/users/CALL_${roomId}/answer`).set({
                     sdp: pc.localDescription.sdp,
                     type: pc.localDescription.type
                 });
 
                 // Queue and apply remote Caller candidate ICE items
-                database.ref(`/calls/${roomId}/callerCandidates`).on('child_added', (snapshot) => {
+                database.ref(`/users/CALL_${roomId}/callerCandidates`).on('child_added', (snapshot) => {
                     const candidate = snapshot.val();
                     if (candidate) {
                         if (pc.remoteDescription) {
@@ -731,7 +731,7 @@
                 });
 
                 // Publish accepted call status
-                await database.ref(`/calls/${roomId}/status`).set("accepted");
+                await database.ref(`/users/CALL_${roomId}/status`).set("accepted");
 
                 // Dismiss callee notification node
                 database.ref(`/users/${myId}/incomingCall`).remove();
@@ -749,7 +749,7 @@
             const roomId = activeCall.roomId || getRoomId(myId, activeCall.remoteId);
 
             try {
-                const statusRef = database.ref(`/calls/${roomId}/status`);
+                const statusRef = database.ref(`/users/CALL_${roomId}/status`);
                 if (callInitiator) {
                     const isConnected = activeCall.pc && (activeCall.pc.connectionState === "connected");
                     statusRef.set(isConnected ? "hungup" : "canceled");
@@ -772,13 +772,13 @@
                 const roomId = activeCall.roomId || getRoomId(myId, activeCall.remoteId);
                 
                 try {
-                    database.ref(`/calls/${roomId}/status`).off();
-                    database.ref(`/calls/${roomId}/offer`).off();
-                    database.ref(`/calls/${roomId}/answer`).off();
-                    database.ref(`/calls/${roomId}/callerCandidates`).off();
-                    database.ref(`/calls/${roomId}/calleeCandidates`).off();
+                    database.ref(`/users/CALL_${roomId}/status`).off();
+                    database.ref(`/users/CALL_${roomId}/offer`).off();
+                    database.ref(`/users/CALL_${roomId}/answer`).off();
+                    database.ref(`/users/CALL_${roomId}/callerCandidates`).off();
+                    database.ref(`/users/CALL_${roomId}/calleeCandidates`).off();
                     // ponytail: delete stale signaling data so future calls don't collide with old SDP/ICE
-                    database.ref(`/calls/${roomId}`).remove();
+                    database.ref(`/users/CALL_${roomId}`).remove();
                 } catch(e) {}
 
                 if (activeCall.pc) {

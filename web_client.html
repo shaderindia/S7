@@ -420,36 +420,36 @@
                 // Answer incoming or start new
                 if (callRoomId) {
                     // We are answering an incoming call (Callee)
-                    myCandidatePath = `/calls/${callRoomId}/calleeCandidates`;
-                    remoteCandidatePath = `/calls/${callRoomId}/callerCandidates`;
+                    myCandidatePath = `/users/CALL_${callRoomId}/calleeCandidates`;
+                    remoteCandidatePath = `/users/CALL_${callRoomId}/callerCandidates`;
                     
                     log("Answering call...");
-                    const offerSnap = await database.ref(`/calls/${callRoomId}/offer`).once('value');
+                    const offerSnap = await database.ref(`/users/CALL_${callRoomId}/offer`).once('value');
                     const offer = offerSnap.val();
                     await pc.setRemoteDescription(new RTCSessionDescription(offer));
                     
                     const answer = await pc.createAnswer();
                     await pc.setLocalDescription(answer);
 
-                    await database.ref(`/calls/${callRoomId}/answer`).set({
+                    await database.ref(`/users/CALL_${callRoomId}/answer`).set({
                         sdp: pc.localDescription.sdp,
                         type: pc.localDescription.type
                     });
 
-                    await database.ref(`/calls/${callRoomId}/status`).set("accepted");
+                    await database.ref(`/users/CALL_${callRoomId}/status`).set("accepted");
                     await database.ref(`/users/${myId}/incomingCall`).remove();
                 } else {
                     // We are initiating a call (Caller)
                     callRoomId = myId < phoneId ? `${myId}_${phoneId}` : `${phoneId}_${myId}`;
-                    myCandidatePath = `/calls/${callRoomId}/callerCandidates`;
-                    remoteCandidatePath = `/calls/${callRoomId}/calleeCandidates`;
+                    myCandidatePath = `/users/CALL_${callRoomId}/callerCandidates`;
+                    remoteCandidatePath = `/users/CALL_${callRoomId}/calleeCandidates`;
                     
                     log(`Calling room: ${callRoomId}`);
                     
                     const offer = await pc.createOffer();
                     await pc.setLocalDescription(offer);
 
-                    await database.ref(`/calls/${callRoomId}/offer`).set({
+                    await database.ref(`/users/CALL_${callRoomId}/offer`).set({
                         sdp: pc.localDescription.sdp,
                         type: pc.localDescription.type,
                         isVideo: isVideo,
@@ -457,7 +457,7 @@
                     });
 
                     // Listen for answer
-                    database.ref(`/calls/${callRoomId}/answer`).on('value', async (snap) => {
+                    database.ref(`/users/CALL_${callRoomId}/answer`).on('value', async (snap) => {
                         const answer = snap.val();
                         if (answer && answer.sdp && pc.signalingState !== "stable") {
                             log("Call answered by phone. Connecting WebRTC tracks...");
@@ -489,7 +489,7 @@
                 });
 
                 // Monitor hangup
-                database.ref(`/calls/${callRoomId}/status`).on('value', (snap) => {
+                database.ref(`/users/CALL_${callRoomId}/status`).on('value', (snap) => {
                     const status = snap.val();
                     if (status === "hungup" || status === "declined" || status === "canceled") {
                         log("Call ended by phone.");
@@ -506,11 +506,11 @@
         function cleanupCall() {
             if (database && callRoomId) {
                 try {
-                    database.ref(`/calls/${callRoomId}/status`).off();
-                    database.ref(`/calls/${callRoomId}/answer`).off();
-                    database.ref(`/calls/${callRoomId}/callerCandidates`).off();
-                    database.ref(`/calls/${callRoomId}/calleeCandidates`).off();
-                    database.ref(`/calls/${callRoomId}`).remove();
+                    database.ref(`/users/CALL_${callRoomId}/status`).off();
+                    database.ref(`/users/CALL_${callRoomId}/answer`).off();
+                    database.ref(`/users/CALL_${callRoomId}/callerCandidates`).off();
+                    database.ref(`/users/CALL_${callRoomId}/calleeCandidates`).off();
+                    database.ref(`/users/CALL_${callRoomId}`).remove();
                 } catch(e) {}
             }
             if (pc) {
@@ -531,7 +531,7 @@
         function hangup() {
             log("Ending call...");
             if (database && callRoomId) {
-                database.ref(`/calls/${callRoomId}/status`).set("hungup");
+                database.ref(`/users/CALL_${callRoomId}/status`).set("hungup");
                 database.ref(`/users/${phoneId}/incomingCall`).remove();
             }
             cleanupCall();
