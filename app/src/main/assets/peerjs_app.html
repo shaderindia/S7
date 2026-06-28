@@ -3,8 +3,8 @@
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <!-- Firebase Realtime Database Client SDK v8 -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="firebase-app.js"></script>
+    <script src="firebase-database.js"></script>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
         #video-container {
@@ -818,63 +818,87 @@
         }
 
         function createRoomInWebView(roomId, creatorId, creatorName) {
-            logToAndroid("Creating matching room: " + roomId);
-            const roomRef = database.ref(`/users/ROOM_${roomId}`);
-            roomRef.set({
-                creator: {
-                    id: creatorId,
-                    name: creatorName
+            try {
+                logToAndroid("Creating matching room: " + roomId);
+                if (!database) {
+                    logToAndroid("ERROR: database is not initialized!");
+                    if (window.AndroidBridge) window.AndroidBridge.onError("room-create-error");
+                    return;
                 }
-            }).then(() => {
-                logToAndroid("Room created successfully in Firebase");
-            }).catch(err => {
-                logToAndroid("ERROR creating room: " + err);
-                if (window.AndroidBridge) window.AndroidBridge.onError("room-create-error");
-            });
-            
-            // Listen for joiner
-            roomRef.child("joiner").on('value', (snapshot) => {
-                const joiner = snapshot.val();
-                if (joiner && joiner.id && joiner.name) {
-                    logToAndroid(`Room ${roomId} matched! Creator found joiner: ${joiner.name} (${joiner.id})`);
-                    roomRef.child("joiner").off();
-                    if (window.AndroidBridge) {
-                        window.AndroidBridge.onRoomMatched(joiner.id, joiner.name);
+                const roomRef = database.ref(`/users/ROOM_${roomId}`);
+                roomRef.set({
+                    creator: {
+                        id: creatorId,
+                        name: creatorName
                     }
-                    roomRef.remove();
+                }).then(() => {
+                    logToAndroid("Room created successfully in Firebase");
+                }).catch(err => {
+                    logToAndroid("ERROR creating room: " + err);
+                    if (window.AndroidBridge) window.AndroidBridge.onError("room-create-error");
+                });
+                
+                // Listen for joiner
+                roomRef.child("joiner").on('value', (snapshot) => {
+                    const joiner = snapshot.val();
+                    if (joiner && joiner.id && joiner.name) {
+                        logToAndroid(`Room ${roomId} matched! Creator found joiner: ${joiner.name} (${joiner.id})`);
+                        roomRef.child("joiner").off();
+                        if (window.AndroidBridge) {
+                            window.AndroidBridge.onRoomMatched(joiner.id, joiner.name);
+                        }
+                        roomRef.remove();
+                    }
+                });
+            } catch (e) {
+                logToAndroid("Synchronous error in createRoomInWebView: " + e);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onError("room-create-error");
                 }
-            });
+            }
         }
 
         function joinRoomInWebView(roomId, joinerId, joinerName) {
-            logToAndroid("Joining matching room: " + roomId);
-            const roomRef = database.ref(`/users/ROOM_${roomId}`);
-            
-            roomRef.child("creator").once('value').then((snapshot) => {
-                const creator = snapshot.val();
-                if (creator && creator.id && creator.name) {
-                    logToAndroid(`Room ${roomId} matched! Joiner found creator: ${creator.name} (${creator.id})`);
-                    
-                    roomRef.child("joiner").set({
-                        id: joinerId,
-                        name: joinerName
-                    }).then(() => {
+            try {
+                logToAndroid("Joining matching room: " + roomId);
+                if (!database) {
+                    logToAndroid("ERROR: database is not initialized!");
+                    if (window.AndroidBridge) window.AndroidBridge.onError("room-not-found");
+                    return;
+                }
+                const roomRef = database.ref(`/users/ROOM_${roomId}`);
+                
+                roomRef.child("creator").once('value').then((snapshot) => {
+                    const creator = snapshot.val();
+                    if (creator && creator.id && creator.name) {
+                        logToAndroid(`Room ${roomId} matched! Joiner found creator: ${creator.name} (${creator.id})`);
+                        
+                        roomRef.child("joiner").set({
+                            id: joinerId,
+                            name: joinerName
+                        }).then(() => {
+                            if (window.AndroidBridge) {
+                                window.AndroidBridge.onRoomMatched(creator.id, creator.name);
+                            }
+                        });
+                    } else {
+                        logToAndroid(`Room ${roomId} not found or has no creator.`);
                         if (window.AndroidBridge) {
-                            window.AndroidBridge.onRoomMatched(creator.id, creator.name);
+                            window.AndroidBridge.onError("room-not-found");
                         }
-                    });
-                } else {
-                    logToAndroid(`Room ${roomId} not found or has no creator.`);
+                    }
+                }).catch((err) => {
+                    logToAndroid("Error joining room: " + err);
                     if (window.AndroidBridge) {
                         window.AndroidBridge.onError("room-not-found");
                     }
-                }
-            }).catch((err) => {
-                logToAndroid("Error joining room: " + err);
+                });
+            } catch (e) {
+                logToAndroid("Synchronous error in joinRoomInWebView: " + e);
                 if (window.AndroidBridge) {
                     window.AndroidBridge.onError("room-not-found");
                 }
-            });
+            }
         }
 
         function cancelRoomMatchingInWebView(roomId) {

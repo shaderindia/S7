@@ -78,19 +78,17 @@ fun SecureDashboardScreen(
         // It remains virtually invisible (1dp size and low alpha) in the background so that signalling and calling connections
         // stay active and healthy. When a video call connects, it expands to fill the entire screen dynamically.
         val isVideoCallActiveAndConnected = callSession?.callType == CallType.VIDEO && callSession?.status == CallStatus.CONNECTED
-        if (myProfile != null && myProfile?.name != "Security Agent") {
-            Box(
-                modifier = if (isVideoCallActiveAndConnected && callSession?.isVideoOff == false) {
-                    Modifier.fillMaxSize()
-                } else {
-                    Modifier.size(1.dp).alpha(0.01f)
-                }
-            ) {
-                androidx.compose.ui.viewinterop.AndroidView(
-                    factory = { com.example.data.PeerJSManager.webView ?: android.webkit.WebView(context) },
-                    modifier = Modifier.fillMaxSize()
-                )
+        Box(
+            modifier = if (isVideoCallActiveAndConnected && callSession?.isVideoOff == false) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.size(1.dp).alpha(0.01f)
             }
+        ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { com.example.data.PeerJSManager.webView ?: android.webkit.WebView(context) },
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
         if (myProfile != null && myProfile?.name == "Security Agent") {
@@ -2717,7 +2715,10 @@ fun OnboardingScreen(
     
     // Cache the generated ID once so it doesn't regenerate on every recomposition
     val generatedId = remember {
-        "SEC-${com.example.util.NetworkUtils.getLocalIpAddress()}"
+        val r1 = (100..999).random()
+        val r2 = (100..999).random()
+        val r3 = (100..999).random()
+        "SEC-$r1-$r2-$r3"
     }
     
     val context = LocalContext.current

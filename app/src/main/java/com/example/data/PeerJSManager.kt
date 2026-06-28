@@ -76,6 +76,16 @@ object PeerJSManager {
                             // Grant camera/mic permissions automatically to WebRTC
                             request.grant(request.resources)
                         }
+                        override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                            consoleMessage?.let {
+                                val msg = "WebView Console [${it.messageLevel()}]: ${it.message()} at ${it.sourceId()}:${it.lineNumber()}"
+                                Log.d(TAG, msg)
+                                Handler(Looper.getMainLooper()).post {
+                                    onLogCallback?.invoke(msg)
+                                }
+                            }
+                            return true
+                        }
                     }
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
