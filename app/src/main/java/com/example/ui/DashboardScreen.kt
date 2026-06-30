@@ -20,12 +20,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +41,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.rememberAsyncImagePainter
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebView
 import com.example.data.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,6 +72,14 @@ fun SecureDashboardScreen(
     var showAddFriendDialog by remember { mutableStateOf(false) }
     var isCallMinimized by remember { mutableStateOf(false) }
 
+    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    LaunchedEffect(Unit) {
+        while (PeerJSManager.webView == null) {
+            delay(100)
+        }
+        webViewInstance = PeerJSManager.webView
+    }
+
     LaunchedEffect(callSession) {
         if (callSession == null) {
             isCallMinimized = false
@@ -74,23 +87,6 @@ fun SecureDashboardScreen(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Keep WebView attached permanently at the root of SecureDashboardScreen once PeerJS is initialized (after onboarding).
-        // It remains virtually invisible (1dp size and low alpha) in the background so that signalling and calling connections
-        // stay active and healthy. When a video call connects, it expands to fill the entire screen dynamically.
-        val isVideoCallActiveAndConnected = callSession?.callType == CallType.VIDEO && callSession?.status == CallStatus.CONNECTED
-        Box(
-            modifier = if (isVideoCallActiveAndConnected && callSession?.isVideoOff == false) {
-                Modifier.fillMaxSize()
-            } else {
-                Modifier.size(1.dp).alpha(0.01f)
-            }
-        ) {
-            androidx.compose.ui.viewinterop.AndroidView(
-                factory = { com.example.data.PeerJSManager.webView ?: android.webkit.WebView(context) },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
         if (myProfile != null && myProfile?.name == "Security Agent") {
             OnboardingScreen(
                 viewModel = viewModel,
@@ -99,65 +95,65 @@ fun SecureDashboardScreen(
         } else {
             // Main Screen or Chat Room overlay
             if (activeContact != null) {
-            ChatRoomView(
-                viewModel = viewModel,
-                contact = activeContact!!,
-                onBack = { viewModel.selectContact(null) }
-            )
-        } else {
-            Scaffold(
-                topBar = {
-                    LargeTopAppBar(
-                        title = {
-                            Column(modifier = Modifier.padding(start = 4.dp)) {
-                                Text(
-                                    text = "S7 Call",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 26.sp,
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    letterSpacing = (-0.5).sp
-                                )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 2.dp)
+                ChatRoomView(
+                    viewModel = viewModel,
+                    contact = activeContact!!,
+                    onBack = { viewModel.selectContact(null) }
+                )
+            } else {
+                Scaffold(
+                    topBar = {
+                        LargeTopAppBar(
+                            title = {
+                                Column(modifier = Modifier.padding(start = 4.dp)) {
+                                    Text(
+                                        text = "S7 Call",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 26.sp,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        letterSpacing = (-0.5).sp
+                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.VerifiedUser,
+                                            contentDescription = "Verified E2EE",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "END-TO-END ENCRYPTED",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+                                }
+                            },
+                            actions = {
+                                // Add Friend Icon Button
+                                IconButton(
+                                    onClick = { showAddFriendDialog = true },
+                                    modifier = Modifier
+                                        .padding(end = 6.dp)
+                                        .size(40.dp)
+                                        .background(
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                            shape = CircleShape
+                                        )
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Filled.VerifiedUser,
-                                        contentDescription = "Verified E2EE",
+                                        imageVector = Icons.Filled.PersonAdd,
+                                        contentDescription = "Add Friend",
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "END-TO-END ENCRYPTED",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        letterSpacing = 1.sp
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
-                            }
-                        },
-                        actions = {
-                            // Add Friend Icon Button
-                            IconButton(
-                                onClick = { showAddFriendDialog = true },
-                                modifier = Modifier
-                                    .padding(end = 6.dp)
-                                    .size(40.dp)
-                                    .background(
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                        shape = CircleShape
-                                    )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.PersonAdd,
-                                    contentDescription = "Add Friend",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        },
+                            },
                         colors = TopAppBarDefaults.largeTopAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background
                         )
@@ -252,11 +248,41 @@ fun SecureDashboardScreen(
         }
     }
 
+        // Z = 1: WebView container for WebRTC video rendering
+        val isVideoActive = callSession != null && 
+                            callSession?.callType == CallType.VIDEO && 
+                            !isCallMinimized
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(x = if (isVideoActive) 0.dp else 5000.dp)
+                .zIndex(1f)
+        ) {
+            webViewInstance?.let { webView ->
+                AndroidView(
+                    factory = { ctx ->
+                        (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                        webView.apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
         // Animated full screen secure calling overlay
         AnimatedVisibility(
             visible = callSession != null && !isCallMinimized,
             enter = fadeIn() + slideInVertically { it },
-            exit = fadeOut() + slideOutVertically { it }
+            exit = fadeOut() + slideOutVertically { it },
+            modifier = Modifier.zIndex(2f)
         ) {
             callSession?.let { session ->
                 ActiveCallOverlay(
@@ -1757,6 +1783,7 @@ fun ChatRoomView(
     contact: Contact,
     onBack: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     val messages by viewModel.messages.collectAsState()
     val isTyping by viewModel.isTyping.collectAsState()
     val myProfile by viewModel.myProfile.collectAsState()
@@ -1767,6 +1794,7 @@ fun ChatRoomView(
     var messageText by remember { mutableStateOf("") }
     var showVerifyDialog by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+    var showDeleteFriendConfirm by remember { mutableStateOf(false) }
     val myId = myProfile?.mySecureId ?: "SEC-814-297-ZPH"
 
     var selectedDisappearDuration by remember { mutableStateOf(disappearingTime) }
@@ -1838,16 +1866,53 @@ fun ChatRoomView(
                     IconButton(onClick = { viewModel.initiateCall(contact, CallType.VIDEO) }) {
                         Icon(Icons.Filled.VideoCall, "Video Call")
                     }
-                    // Exit Room
+
+                    // Add Friend / Delete Friend Actions
+                    if (contact.isFriend) {
+                        IconButton(onClick = { showDeleteFriendConfirm = true }) {
+                            Icon(Icons.Filled.PersonRemove, "Delete Friend", tint = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        // Can only add friend when inside a matching room (i.e. isFriend is false)
+                        IconButton(onClick = { viewModel.addContactAsFriend(contact) }) {
+                            Icon(Icons.Filled.PersonAdd, "Add Friend", tint = Color(0xFF10B981))
+                        }
+                    }
+
+                    // Exit Room (Only relevant/needed for temporary/matching connections or room sessions)
                     IconButton(onClick = { showExitConfirm = true }) {
                         Icon(Icons.Filled.Logout, "Exit Room", tint = MaterialTheme.colorScheme.error)
+                    }
+
+                    if (showDeleteFriendConfirm) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteFriendConfirm = false },
+                            title = { Text("Delete Friend?") },
+                            text = { Text("This will remove this contact from your saved friends list and delete all message history locally.") },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showDeleteFriendConfirm = false
+                                        viewModel.deleteFriend(contact)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text("Delete Friend")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteFriendConfirm = false }) {
+                                    Text("Cancel")
+                                }
+                            }
+                        )
                     }
 
                     if (showExitConfirm) {
                         AlertDialog(
                             onDismissRequest = { showExitConfirm = false },
                             title = { Text("Exit Room?") },
-                            text = { Text("This will disconnect from the peer and delete the room/contact. All message history will be removed.") },
+                            text = { Text("This will disconnect from the peer and close the room. If not added as a friend, the contact and message history will be removed.") },
                             confirmButton = {
                                 Button(
                                     onClick = {
@@ -1878,6 +1943,12 @@ fun ChatRoomView(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .background(chatBgColor)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    focusManager.clearFocus()
+                }
         ) {
             // Room code banner — visible only while creator is waiting for friend
             val context2 = LocalContext.current
@@ -2273,7 +2344,7 @@ fun ActiveCallOverlay(
                         .size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.ScreenRotation,
+                        imageVector = Icons.Filled.Sync,
                         contentDescription = "Rotate Remote Video",
                         tint = Color(0xFF10B981)
                     )
@@ -2287,7 +2358,7 @@ fun ActiveCallOverlay(
                         .size(44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Cached,
+                        imageVector = Icons.Filled.Refresh,
                         contentDescription = "Rotate Local Video",
                         tint = Color(0xFF34D399)
                     )
@@ -2395,58 +2466,30 @@ fun ActiveCallOverlay(
             }
         }
 
-        // Overlay low latency, quality and battery HUD labels (Only when connected)
+        // Clean, minimalist calling header (Only when connected)
         if (session.status == CallStatus.CONNECTED) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.TopStart)
-                    .padding(top = 48.dp, start = 16.dp, end = 16.dp)
-                    .background(Color(0x99000000), RoundedCornerShape(12.dp))
-                    .border(0.5.dp, Color(0xFF10B981).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .padding(12.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val statusText = when (peerConnectionState) {
-                        "online" -> "🟢 P2P Active (Online)"
-                        "connecting" -> "🟡 Connecting..."
-                        else -> "🔴 Offline (P2P Failed)"
-                    }
-                    val statusColor = when (peerConnectionState) {
-                        "online" -> Color(0xFF10B981)
-                        "connecting" -> Color(0xFFF59E0B)
-                        else -> Color(0xFFEF4444)
-                    }
-                    Text(
-                        text = statusText,
-                        color = statusColor,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                    val min = session.durationSec / 60
-                    val sec = session.durationSec % 60
-                    Text(
-                        text = String.format("%02d:%02d", min, sec),
-                        color = Color.White,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Latency: ${session.latencyMs}ms", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    Text("Codec: Opus HD Voice (${session.audioQualityKbps}kbps)", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                }
+                Text(
+                    text = session.contactName,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp
+                )
                 Spacer(modifier = Modifier.height(4.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Profile: ${session.batteryEfficiency.replace("_", " ")}", color = Color(0xFF34D399), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text("E2EE: Verified SEC-Tunnel", color = Color(0xFF34D399), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
+                val min = session.durationSec / 60
+                val sec = session.durationSec % 60
+                Text(
+                    text = String.format("%02d:%02d", min, sec),
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 14.sp
+                )
             }
         }
 

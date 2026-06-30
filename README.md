@@ -8,12 +8,14 @@ S7 Call is a modern, privacy-focused Android application that provides secure, e
 ## 🚀 Key Features
 
 *   **P2P Voice & Video Calls:** Real-time WebRTC connections with automatic audio/video track routing.
-*   **End-to-End Encryption (E2EE):** All chat messages are encrypted locally using AES-CBC before transmission. Encryption keys are derived symmetrically per chat pair.
+*   **Dynamic Screen Rotations & Fit:** Rotated video feeds automatically swap width and height (`100vh` / `100vw` dynamically) on 90°/270° rotation cycles. This aligns the video to portrait viewports perfectly with **zero zoom-in distortion** or stretching.
+*   **Correct Horizontal Mirroring:** Consistently mirrors local camera previews horizontally using `scaleX(-1)` at all rotation states, aligning camera movements naturally (like a mirror).
+*   **Persistent Local Friend Management:** Add contacts as friends directly from active calls/rooms. Saved friends persist locally in the database, allowing you to select them from the Chats tab and chat instantly without needing to generate new room codes. Exiting a room session automatically cleans up non-friend contacts while preserving friends.
+*   **Keyboard Auto-Dismissal:** Tap anywhere on the chat background to automatically clear focus from text input fields and hide the soft keyboard.
+*   **End-to-End Encryption (E2EE):** All chat messages are encrypted locally using AES before transmission. Encryption keys are derived symmetrically per chat pair.
 *   **Visual Key Fingerprints:** Users can compare Signal-style security numbers (`SEC-XXXX-...`) to verify identity.
 *   **Disappearing Messages:** Configurable message-expiration timers (e.g., 10s, 30s, 60s) with automatic background database purging.
 *   **Robust Local Database:** Backed by Android Room database for high-performance offline caching, message persistence, and state management.
-*   **Signaling Fallback:** Seamless signaling and connection coordination leveraging a secure Firebase Realtime Database.
-*   **Modern Jetpack Compose UI:** A responsive, interactive dashboard styled with dynamic dark/light mode switching.
 
 ---
 
@@ -26,7 +28,7 @@ S7 Call follows the **MVVM (Model-View-ViewModel)** architectural pattern. The c
 *   **[DashboardScreen.kt](file:///app/src/main/java/com/example/ui/DashboardScreen.kt):** Contains all Jetpack Compose screens including Chat, Call, Status, Settings, and Onboarding.
 
 ### ⚙️ State & Logic (ViewModel)
-*   **[SecureViewModel.kt](file:///app/src/main/java/com/example/ui/SecureViewModel.kt):** Coordinates calling flows, message dispatch, presence updates, and database actions.
+*   **[SecureViewModel.kt](file:///app/src/main/java/com/example/ui/SecureViewModel.kt):** Coordinates calling flows, message dispatch, presence updates, database actions, and friend lists.
 
 ### 💾 Data & Signaling (Repository & WebView Bridge)
 *   **[SecureRepository.kt](file:///app/src/main/java/com/example/data/SecureRepository.kt):** Binds the local database DAOs and intercepts outgoing/incoming data with cryptography filters.
@@ -39,14 +41,15 @@ S7 Call follows the **MVVM (Model-View-ViewModel)** architectural pattern. The c
 ## ⚙️ Quick Start Setup
 
 ### Prerequisites
-*   **Android Studio** (Koala or newer)
+*   **Android Studio** (Ladybug or newer)
 *   **Android SDK 36**
 *   **JDK 17 or JBR**
 
 ### Local Configuration
-1.  **Clone the Repository** (Done).
+1.  **Configure Firebase Credentials:**
+    Add your custom `google-services.json` inside the `app/` folder (use `app/google-services.json.example` as a template).
 2.  **Configure API Secrets:**
-    Create a `.env` file in the root directory and specify your Gemini API key (see `.env.example` as a template):
+    Create a `.env` file in the root directory and specify your Gemini API key:
     ```env
     GEMINI_API_KEY=your_gemini_api_key_here
     ```

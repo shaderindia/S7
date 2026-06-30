@@ -10,7 +10,8 @@ data class Contact(
     val profilePicUrl: String,
     val onlineStatus: String = "offline", // online, offline, idle
     val lastActive: Long = System.currentTimeMillis(),
-    val profileVisibility: String = "EVERYONE" // EVERYONE, CONTACTS_ONLY, NOBODY
+    val profileVisibility: String = "EVERYONE", // EVERYONE, CONTACTS_ONLY, NOBODY
+    val isFriend: Boolean = false
 )
 
 @Entity(tableName = "messages")

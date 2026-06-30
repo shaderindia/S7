@@ -16,11 +16,13 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
     private val repository = SecureRepository(db)
 
     // UI flows
-    val contacts: StateFlow<List<Contact>> = repository.allContacts.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    val contacts: StateFlow<List<Contact>> = repository.allContacts
+        .map { list -> list.filter { it.isFriend && !it.id.startsWith("ROOM_WAITING_") } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val activeStatuses: StateFlow<List<StatusUpdate>> = repository.getActiveStatuses().stateIn(
         scope = viewModelScope,
@@ -162,11 +164,38 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     PeerJSManager.cancelRoom(currentRoom)
                 }
             }
-            repository.contactDao.deleteContact(contact)
+            if (!contact.isFriend) {
+                repository.contactDao.deleteContact(contact)
+            }
             selectContact(null)
             roomStatus.value = "idle"
             activeRoomId.value = null
             pendingRoomCode.value = null
+        }
+    }
+
+    fun addContactAsFriend(contact: Contact) {
+        viewModelScope.launch {
+            val updated = contact.copy(isFriend = true)
+            repository.updateContact(updated)
+            if (activeContact.value?.id == contact.id) {
+                _activeContact.value = updated
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Added as friend locally!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun deleteFriend(contact: Contact) {
+        viewModelScope.launch {
+            repository.contactDao.deleteContact(contact)
+            if (activeContact.value?.id == contact.id) {
+                selectContact(null)
+            }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Friend deleted locally!", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -263,6 +292,7 @@ class SecureViewModel(application: Application) : AndroidViewModel(application) 
                     _activeCallSession.value = current.copy(status = CallStatus.CONNECTED)
                     startCallTimer()
                 }
+                PeerJSManager.setVideoRotations(_remoteVideoRotation.value, _localVideoRotation.value)
             }
 
             PeerJSManager.onCallDisconnectedCallback = {

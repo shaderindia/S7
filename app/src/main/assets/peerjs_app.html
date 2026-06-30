@@ -6,56 +6,103 @@
     <script src="firebase-app.js"></script>
     <script src="firebase-database.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; }
+        body, html { 
+            margin: 0; padding: 0; 
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            background: #000; overflow: hidden; 
+        }
         #video-container {
-            display: none; width: 100%; height: 100%; position: relative; overflow: hidden;
+            display: none; 
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+            z-index: 1; overflow: hidden;
         }
         #remoteVideo {
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0; margin: auto;
+            width: 100% !important; height: 100% !important;
+            object-fit: cover;
             background: #000;
+            display: block;
+            z-index: 2;
             transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
         }
-        #localVideo {
+        #localVideoContainer {
             position: absolute; bottom: 20px; right: 20px;
-            object-fit: cover; border-radius: 8px; border: 2px solid white; background: #333; z-index: 10;
+            width: 120px !important; height: 160px !important;
+            border-radius: 8px; border: 2px solid white; 
+            overflow: hidden; z-index: 10;
+            background: #333;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #localVideo {
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0; margin: auto;
+            width: 100% !important; height: 100% !important;
+            object-fit: cover;
+            display: block;
             transition: transform 0.2s ease, width 0.2s ease, height 0.2s ease;
         }
 
         /* REMOTE VIDEO ROTATIONS */
         .remote-rot-0 {
-            width: 100%; height: 100%; object-fit: cover; transform: none;
+            transform: none;
+            width: 100% !important; height: 100% !important;
         }
         .remote-rot-90 {
-            width: 100vh; height: 100vw; position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%) rotate(90deg); object-fit: cover;
+            transform: rotate(90deg);
+            width: 100vh !important; height: 100vw !important;
         }
         .remote-rot-180 {
-            width: 100%; height: 100%; object-fit: cover; transform: rotate(180deg);
+            transform: rotate(180deg);
+            width: 100% !important; height: 100% !important;
         }
         .remote-rot-270 {
-            width: 100vh; height: 100vw; position: absolute; top: 50%; left: 50%;
-            transform: translate(-50%, -50%) rotate(270deg); object-fit: cover;
+            transform: rotate(270deg);
+            width: 100vh !important; height: 100vw !important;
         }
 
         /* LOCAL VIDEO ROTATIONS */
         .local-rot-0 {
-            width: 100px; height: 150px; transform: scaleX(-1);
+            transform: scaleX(-1);
+            width: 100% !important; height: 100% !important;
         }
         .local-rot-90 {
-            width: 150px; height: 100px; transform: rotate(90deg) scaleY(-1);
+            transform: rotate(90deg) scaleX(-1);
+            width: 160px !important; height: 120px !important;
         }
         .local-rot-180 {
-            width: 100px; height: 150px; transform: rotate(180deg) scaleX(-1);
+            transform: rotate(180deg) scaleX(-1);
+            width: 100% !important; height: 100% !important;
         }
         .local-rot-270 {
-            width: 150px; height: 100px; transform: rotate(270deg) scaleY(-1);
+            transform: rotate(270deg) scaleX(-1);
+            width: 160px !important; height: 120px !important;
+        }
+        
+        /* CHROMIUM COMPOSITOR SWAPCHAIN FIX */
+        .android-fix {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 1px;
+            height: 1px;
+            background: transparent;
+            z-index: 1000;
+            animation: webview-repaint-fix 0.5s infinite linear;
+        }
+        @keyframes webview-repaint-fix {
+            0% { opacity: 0.99; }
+            50% { opacity: 1.0; }
+            100% { opacity: 0.99; }
         }
     </style>
 </head>
 <body>
     <div id="video-container">
         <video id="remoteVideo" autoplay playsinline></video>
-        <video id="localVideo" autoplay playsinline muted></video>
+        <div id="localVideoContainer">
+            <video id="localVideo" autoplay playsinline muted></video>
+        </div>
     </div>
+    <div class="android-fix"></div>
     <script>
         // WebRTC & Firebase Realtime Database Config (populated dynamically at runtime)
         const firebaseConfig = {
@@ -204,7 +251,7 @@
                         };
 
                         if (window.AndroidBridge) {
-                            window.AndroidBridge.onIncomingCall(incoming.from, incoming.isVideo);
+                            window.AndroidBridge.onIncomingCall(incoming.from, incoming.isVideo ? "true" : "false");
                         }
 
                         // Listen for remote cancellation
@@ -297,8 +344,7 @@
             const roomId = getRoomId(myId, remoteId);
 
             const pc = new RTCPeerConnection({ 
-                iceServers: defaultIceServers,
-                iceTransportPolicy: "relay"
+                iceServers: defaultIceServers
             });
             const dc = pc.createDataChannel("chat", { ordered: true });
             
@@ -355,8 +401,7 @@
 
             const roomId = getRoomId(myId, friendId);
             const pc = new RTCPeerConnection({ 
-                iceServers: defaultIceServers,
-                iceTransportPolicy: "relay"
+                iceServers: defaultIceServers
             });
 
             dataConnections[friendId] = { pc, dataChannel: null };
@@ -484,16 +529,22 @@
             };
 
             if (type === "media") {
-                pc.ontrack = (event) => {
-                    logToAndroid("Remote video/audio track received");
-                    if (event.streams && event.streams[0]) {
-                        document.getElementById('remoteVideo').srcObject = event.streams[0];
-                        applyRotations();
-                        if (window.AndroidBridge) {
-                            window.AndroidBridge.onCallConnected();
-                        }
-                    }
-                };
+                 pc.ontrack = (event) => {
+                     logToAndroid("Remote video/audio track received: " + event.track.kind);
+                     const remoteVideo = document.getElementById('remoteVideo');
+                     const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+                     
+                     if (remoteVideo.srcObject !== stream || event.track.kind === "video") {
+                         remoteVideo.srcObject = stream;
+                         remoteVideo.play()
+                             .then(() => logToAndroid("Remote video playback started successfully"))
+                             .catch(e => logToAndroid("Remote video play failed: " + e));
+                         applyRotations();
+                         if (window.AndroidBridge) {
+                             window.AndroidBridge.onCallConnected();
+                         }
+                     }
+                 };
             }
         }
 
@@ -588,15 +639,24 @@
 
             // Fast local media stream initialization
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: isVideo ? { facingMode: "user" } : false
-                });
-                document.getElementById('localVideo').srcObject = localStream;
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: isVideo ? { facingMode: "user" } : false
+                    });
+                } catch (e) {
+                    logToAndroid("getUserMedia with facingMode failed, retrying with basic video constraint: " + e);
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: isVideo ? true : false
+                    });
+                }
+                const localVideo = document.getElementById('localVideo');
+                localVideo.srcObject = localStream;
+                localVideo.play().catch(e => logToAndroid("Local video play failed: " + e));
 
                 const pc = new RTCPeerConnection({ 
-                    iceServers: defaultIceServers,
-                    iceTransportPolicy: "relay"
+                    iceServers: defaultIceServers
                 });
                 activeCall = {
                     remoteId,
@@ -696,15 +756,24 @@
             const roomId = activeCall.roomId;
 
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    audio: true,
-                    video: isVideo ? { facingMode: "user" } : false
-                });
-                document.getElementById('localVideo').srcObject = localStream;
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: isVideo ? { facingMode: "user" } : false
+                    });
+                } catch (e) {
+                    logToAndroid("getUserMedia with facingMode failed, retrying with basic video constraint: " + e);
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: isVideo ? true : false
+                    });
+                }
+                const localVideo = document.getElementById('localVideo');
+                localVideo.srcObject = localStream;
+                localVideo.play().catch(e => logToAndroid("Local video play failed: " + e));
 
                 const pc = new RTCPeerConnection({ 
-                    iceServers: defaultIceServers,
-                    iceTransportPolicy: "relay"
+                    iceServers: defaultIceServers
                 });
                 activeCall.pc = pc;
                 activeCall.localStream = localStream;
@@ -923,6 +992,19 @@
                 }
             }
         }
+
+        setInterval(() => {
+            if (activeCall) {
+                try {
+                    const rVid = document.getElementById('remoteVideo');
+                    const lVid = document.getElementById('localVideo');
+                    logToAndroid(`[DIAG] RemoteVideo: srcObject=${!!rVid.srcObject}, videoSize=${rVid.videoWidth}x${rVid.videoHeight}, clientSize=${rVid.clientWidth}x${rVid.clientHeight}, paused=${rVid.paused}, readyState=${rVid.readyState}`);
+                    logToAndroid(`[DIAG] LocalVideo: srcObject=${!!lVid.srcObject}, videoSize=${lVid.videoWidth}x${lVid.videoHeight}, clientSize=${lVid.clientWidth}x${lVid.clientHeight}, paused=${lVid.paused}, readyState=${lVid.readyState}`);
+                } catch(e) {
+                    logToAndroid(`[DIAG] Error reading video states: ${e}`);
+                }
+            }
+        }, 3000);
 
         function cancelRoomMatchingInWebView(roomId) {
             logToAndroid("Canceling matching for room: " + roomId);

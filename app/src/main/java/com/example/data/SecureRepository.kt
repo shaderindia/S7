@@ -35,6 +35,10 @@ class SecureRepository(private val db: AppDatabase) {
         contactDao.deleteContact(contact)
     }
 
+    suspend fun updateContact(contact: Contact) {
+        contactDao.updateContact(contact)
+    }
+
     suspend fun insertStatus(status: StatusUpdate) {
         statusDao.insertStatus(status)
     }

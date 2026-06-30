@@ -91,6 +91,13 @@
 
     <script src="firebase-config.js"></script>
     <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            log(`🔴 JavaScript Error: ${message} at ${source}:${lineno}`);
+            return false;
+        };
+        window.onunhandledrejection = function(event) {
+            log(`🔴 Unhandled Promise Rejection: ${event.reason}`);
+        };
 
         let database = null;
         let myId = "";
@@ -408,11 +415,12 @@
                     audio: true,
                     video: isVideo
                 });
-                document.getElementById('localVideo').srcObject = localStream;
+                const localVideo = document.getElementById('localVideo');
+                localVideo.srcObject = localStream;
+                localVideo.play().catch(e => log("Local video play failed: " + e));
 
                 pc = new RTCPeerConnection({ 
-                    iceServers: defaultIceServers,
-                    iceTransportPolicy: "relay"
+                    iceServers: defaultIceServers
                 });
                 
                 localStream.getTracks().forEach(track => {
@@ -420,8 +428,16 @@
                 });
 
                 pc.ontrack = (event) => {
-                    log("Received remote media stream from phone!");
-                    document.getElementById('remoteVideo').srcObject = event.streams[0];
+                    log("Received remote media stream track from phone: " + event.track.kind);
+                    const remoteVideo = document.getElementById('remoteVideo');
+                    const stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+                    
+                    if (remoteVideo.srcObject !== stream || event.track.kind === "video") {
+                        remoteVideo.srcObject = stream;
+                        remoteVideo.play()
+                            .then(() => log("Remote video playback started successfully"))
+                            .catch(e => log("Remote video play failed: " + e));
+                    }
                 };
 
                 let myCandidatePath = "";

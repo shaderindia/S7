@@ -11,6 +11,10 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewClientCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,12 +45,12 @@ object PeerJSManager {
         
         val firebaseApp = try { FirebaseApp.getInstance() } catch(e: Exception) { null }
         val options = firebaseApp?.options
-        val apiKey = options?.apiKey ?: ""
-        var databaseUrl = options?.databaseUrl ?: ""
-        if (databaseUrl.isEmpty()) {
-            databaseUrl = "https://nsgb-gaming-default-rtdb.asia-southeast1.firebasedatabase.app"
+        var apiKey = options?.apiKey ?: ""
+        if (apiKey.isEmpty()) {
+            apiKey = "AIzaSyDEWlbt3iFpK8iUACfgAVocsOe2PaDDpok"
         }
-        val projectId = options?.projectId ?: ""
+        val databaseUrl = "https://nsgb-gaming-default-rtdb.asia-southeast1.firebasedatabase.app"
+        val projectId = options?.projectId ?: "nsgb-gaming"
 
         Handler(Looper.getMainLooper()).post {
             if (webView == null) {
@@ -78,7 +82,10 @@ object PeerJSManager {
                         }
                         override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                             consoleMessage?.let {
-                                val msg = "WebView Console [${it.messageLevel()}]: ${it.message()} at ${it.sourceId()}:${it.lineNumber()}"
+                                var rawMsg = it.message() ?: ""
+                                rawMsg = rawMsg.replace("openrelay", "***")
+                                rawMsg = rawMsg.replace(Regex("\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b"), "[HIDDEN_IP]")
+                                val msg = "WebView Console [${it.messageLevel()}]: $rawMsg at ${it.sourceId()}:${it.lineNumber()}"
                                 Log.i(TAG, msg)
                                 Handler(Looper.getMainLooper()).post {
                                     onLogCallback?.invoke(msg)
@@ -87,15 +94,25 @@ object PeerJSManager {
                             return true
                         }
                     }
-                    webViewClient = object : WebViewClient() {
+                    val assetLoader = WebViewAssetLoader.Builder()
+                        .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context!!))
+                        .build()
+
+                    webViewClient = object : WebViewClientCompat() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             Log.i(TAG, "PeerJS bridge loaded, initializing peer...")
                             evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')") {}
                         }
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: WebResourceRequest
+                        ): WebResourceResponse? {
+                            return assetLoader.shouldInterceptRequest(request.url)
+                        }
                     }
                     addJavascriptInterface(this@PeerJSManager, "AndroidBridge")
                 }
-                webView?.loadUrl("file:///android_asset/peerjs_app.html")
+                webView?.loadUrl("https://appassets.androidplatform.net/assets/peerjs_app.html")
             } else {
                 Log.i(TAG, "Re-initializing existing peer in WebView with new ID: $myId")
                 webView?.evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')", null)
@@ -175,7 +192,8 @@ object PeerJSManager {
     }
 
     @JavascriptInterface
-    fun onIncomingCall(remoteId: String, isVideo: Boolean) {
+    fun onIncomingCall(remoteId: String, isVideoStr: String) {
+        val isVideo = isVideoStr == "true"
         Handler(Looper.getMainLooper()).post {
             onIncomingCall?.invoke(remoteId, isVideo)
         }
@@ -224,12 +242,12 @@ object PeerJSManager {
         Log.i(TAG, "App foregrounded, ensuring signaling connection is active...")
         val firebaseApp = try { com.google.firebase.FirebaseApp.getInstance() } catch(e: Exception) { null }
         val options = firebaseApp?.options
-        val apiKey = options?.apiKey ?: ""
-        var databaseUrl = options?.databaseUrl ?: ""
-        if (databaseUrl.isEmpty()) {
-            databaseUrl = "https://nsgb-gaming-default-rtdb.asia-southeast1.firebasedatabase.app"
+        var apiKey = options?.apiKey ?: ""
+        if (apiKey.isEmpty()) {
+            apiKey = "AIzaSyDEWlbt3iFpK8iUACfgAVocsOe2PaDDpok"
         }
-        val projectId = options?.projectId ?: ""
+        val databaseUrl = "https://nsgb-gaming-default-rtdb.asia-southeast1.firebasedatabase.app"
+        val projectId = options?.projectId ?: "nsgb-gaming"
         Handler(Looper.getMainLooper()).post {
             webView?.evaluateJavascript("initPeer('$myId', '$apiKey', '$databaseUrl', '$projectId')", null)
         }
